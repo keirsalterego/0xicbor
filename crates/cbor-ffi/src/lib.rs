@@ -14,6 +14,7 @@ mod encoder;
 mod parser;
 mod pretty;
 mod types;
+mod validation;
 
 pub use types::{CborEncoder, CborParser, CborValue};
 
@@ -50,15 +51,13 @@ stub! {
     // budget is expected to grow for a reason other than pointer validation.
     _cbor_value_dup_string(value: *const CborValue, buffer: *mut *mut c_void, buflen: *mut usize, next: *mut CborValue);
 
-    // Strict and canonical-mode validation, beyond the well-formedness check
-    // that parser::cbor_value_validate_basic already performs.
-    cbor_value_validate(it: *const CborValue, flags: u32);
 
     cbor_value_to_json_advance(out: *mut c_void, value: *mut CborValue, flags: c_int);
 }
 
-/// Returns null while stubbed. The real version hands back a `'static` C string.
+/// Static storage, so the caller can hold the pointer indefinitely — which is
+/// what upstream promises and what callers assume.
 #[no_mangle]
-pub extern "C" fn cbor_error_string(_error: c_int) -> *const c_char {
-    core::ptr::null()
+pub extern "C" fn cbor_error_string(error: c_int) -> *const c_char {
+    cbor_core::errstr::error_string(error).as_ptr()
 }

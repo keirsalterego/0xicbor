@@ -16,6 +16,7 @@ extern crate alloc;
 
 pub mod encoder;
 mod error;
+pub mod errstr;
 pub mod fmt;
 pub mod half;
 
