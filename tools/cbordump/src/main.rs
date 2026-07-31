@@ -12,7 +12,7 @@ mod pretty;
 use cbor_core::errstr::error_string;
 use cbor_core::CborError;
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::process::ExitCode;
 
 const USAGE: &str = "\
@@ -33,6 +33,13 @@ When CBOR dump is active, the following options are recognized:
  -n       Show overlong encoding of CBOR numbers and length";
 
 fn main() -> ExitCode {
+    let mut sink = Stdout::new();
+    let code = run(&mut sink);
+    sink.flush();
+    code
+}
+
+fn run(sink: &mut Stdout) -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
     let mut print_json = false;
     let mut json_flags = 0;
@@ -59,13 +66,15 @@ fn main() -> ExitCode {
             Ok('S') => json_flags |= json::STRINGIFY_MAP_KEYS,
             Ok('U') => json_flags |= json::BYTE_STRINGS_TO_BASE64URL,
             Ok('h') => {
-                println!("{USAGE}");
+                sink.write(USAGE.as_bytes());
+                sink.write(b"\n");
                 return ExitCode::SUCCESS;
             }
             Ok(_) => unreachable!("the match and the option spec list the same letters"),
             Err(c) => {
                 eprintln!("Unknown option -{c}.");
-                println!("{USAGE}");
+                sink.write(USAGE.as_bytes());
+                sink.write(b"\n");
                 return ExitCode::FAILURE;
             }
         }
@@ -82,7 +91,7 @@ fn main() -> ExitCode {
             eprintln!("-: {}", strerror(&e));
             return ExitCode::FAILURE;
         }
-        if let Err(e) = dump(&data, print_json, flags) {
+        if let Err(e) = dump(sink, &data, print_json, flags) {
             eprintln!("-: {}", error_text(e));
             return ExitCode::FAILURE;
         }
@@ -104,7 +113,7 @@ fn main() -> ExitCode {
             eprintln!("{name}: {}", strerror(&e));
             return ExitCode::FAILURE;
         }
-        if let Err(e) = dump(&data, print_json, flags) {
+        if let Err(e) = dump(sink, &data, print_json, flags) {
             eprintln!("{name}: {}", error_text(e));
             return ExitCode::FAILURE;
         }
@@ -116,7 +125,7 @@ fn error_text(err: CborError) -> &'static str {
     error_string(err as i32).to_str().unwrap_or("unknown error")
 }
 
-fn dump(data: &[u8], print_json: bool, flags: i32) -> Result<(), CborError> {
+fn dump(sink: &mut Stdout, data: &[u8], print_json: bool, flags: i32) -> Result<(), CborError> {
     let mut r = cbor::Reader::new(data);
     let mut out: Vec<u8> = Vec::new();
     let result = if print_json {
@@ -135,18 +144,53 @@ fn dump(data: &[u8], print_json: bool, flags: i32) -> Result<(), CborError> {
     };
 
     // Upstream writes to stdout as it formats, so whatever it managed before
-    // hitting an error is on the user's terminal already. Keep that.
-    let stdout = io::stdout();
-    let mut sink = stdout.lock();
-    let _ = sink.write_all(&out);
+    // hitting an error has been written already. Keep that.
+    sink.write(&out);
     result?;
-    let _ = sink.write_all(b"\n");
+    sink.write(b"\n");
 
     // One document per file, with nothing after it.
     if r.pos != data.len() {
         return Err(CborError::GarbageAtEnd);
     }
     Ok(())
+}
+
+/// stdout with libc's buffering: by line when it is a terminal, by block when
+/// it is anything else, and flushed on exit either way.
+///
+/// Writing straight through would be simpler, but the buffering decides
+/// whether a dump or the error that follows it comes out first when both
+/// streams are captured together, and that is part of what the tool prints.
+struct Stdout {
+    pending: Vec<u8>,
+    by_line: bool,
+}
+
+impl Stdout {
+    fn new() -> Self {
+        Stdout {
+            pending: Vec::new(),
+            by_line: io::stdout().is_terminal(),
+        }
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.pending.extend_from_slice(bytes);
+        if !self.by_line {
+            return;
+        }
+        if let Some(last) = self.pending.iter().rposition(|&b| b == b'\n') {
+            let tail = self.pending.split_off(last + 1);
+            let _ = io::stdout().write_all(&self.pending);
+            self.pending = tail;
+        }
+    }
+
+    fn flush(&mut self) {
+        let _ = io::stdout().write_all(&self.pending);
+        self.pending.clear();
+    }
 }
 
 /// `strerror(errno)`. Rust appends " (os error N)" to the text it gets from the
