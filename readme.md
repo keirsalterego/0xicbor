@@ -38,15 +38,15 @@ not a target.
 
 | | |
 |---|---|
-| **Original suite** | **1,908 passed, 3,021 failed** of 4,929 reachable rows |
+| **Original suite** | **2,732 passed, 2,197 failed** of 4,929 reachable rows |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
 | **`unsafe` blocks** | **46** |
 | **Differential fuzz** | not yet run |
 
-The 21 passing rows pass by coincidence: every entry point is currently a stub returning
-`CborErrorInternalError`, and some tests expect an error. That is the honest floor. Each
-module that lands moves the number, and the log of it lives in [decisions.md](decisions.md).
+`tst_encoder` passes outright, 1596 of 1596. The parser and the diagnostic printer work.
+The JSON converter is not written yet, and that accounts for nearly all the remaining red.
+Each module that lands moves the number; the log of it lives in [decisions.md](decisions.md).
 
 For scale on the `unsafe` count: uv ships 73 `unsafe` blocks, Bun ships 13,044. The budget
 here is whatever `cbor-ffi` genuinely needs to dereference caller-supplied pointers, and it

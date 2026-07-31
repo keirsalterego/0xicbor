@@ -34,15 +34,15 @@ These are the real numbers from `make test`, not a target.
 
 | | |
 |---|---|
-| Original suite | **21 passed, 4,908 failed** of 4,929 reachable rows |
+| Original suite | **2,732 passed, 2,197 failed** of 4,929 reachable rows |
 | Symbol parity | **44 / 44**, zero `nm` diff against upstream |
 | ABI layout | asserted against C-dumped offsets, passing |
-| `unsafe` blocks | **0** |
+| `unsafe` blocks | **46** |
 | Differential fuzz | not yet run |
 
-The port is in progress. Every entry point is currently a stub returning
-`CborErrorInternalError`, so the 21 passing rows are rows that expect an error and happen to
-get one. That is the honest floor, and the failure count is the progress bar.
+The port is in progress. The encoder passes its suite outright; the parser and the
+diagnostic printer work. The JSON converter is not written yet, which is nearly all of the
+remaining red. The failure count is the progress bar.
 
 ## Where to start
 

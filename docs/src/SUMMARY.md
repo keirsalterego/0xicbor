@@ -2,6 +2,14 @@
 
 [Introduction](index.md)
 
+# Cookbook
+
+- [Porting a C library to Rust](cookbook/index.md)
+  - [1. Get to a red test loop](cookbook/red-loop.md)
+  - [2. Match the ABI](cookbook/matching-the-abi.md)
+  - [3. Write the first module](cookbook/first-module.md)
+  - [4. Match printf exactly](cookbook/matching-printf.md)
+
 # The port
 
 - [Why an ABI shim](architecture/abi-shim.md)

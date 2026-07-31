@@ -62,12 +62,12 @@ headers have to stay C90-clean.
 ```console
 $ make test
 == original suite, linked against the Rust libtinycbor.a ==
-  tst_encoder      2 passed   1594 failed
-  tst_parser      17 passed   2489 failed
+  tst_encoder   1596 passed      0 failed
+  tst_parser    1134 passed   1372 failed
   tst_tojson       2 passed    825 failed
   tst_c90          1 passed      0 failed
   ---
-  TOTAL           21 passed   4908 failed   (upstream: 4929)
+  TOTAL         2732 passed   2197 failed   (upstream: 4929)
 ```
 
 Per binary, not just a total, because the binaries fail for different reasons and watching
