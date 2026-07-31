@@ -7,6 +7,7 @@
 
 use alloc::format;
 use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 /// C's `%.*g`, which Rust has no equivalent for.
 ///
@@ -160,5 +161,151 @@ mod tests {
     fn rejects_bad_utf8() {
         let mut s = String::new();
         assert!(escape_utf8(&mut s, &[0xff, 0xfe]).is_err());
+    }
+}
+
+/// Appends `bytes` to `out` as a JSON string body (RFC 8259 §7).
+///
+/// This is a different job from [`escape_utf8`], which is for CBOR diagnostic
+/// notation. JSON allows any Unicode character between the quotes, so multi-byte
+/// sequences pass straight through and only the control characters, the quote
+/// and the backslash are escaped. Upstream additionally spells out the five
+/// characters that have short escapes rather than emitting `\u00XX`.
+///
+/// Output is `Vec<u8>`, not `String`, on purpose. The input is not required to
+/// be valid UTF-8 — upstream copies bytes through, and the CBOR side has its own
+/// UTF-8 validation, so rejecting here would change which errors callers see.
+/// Pushing an arbitrary byte into a `String` would need `unsafe`, and this crate
+/// forbids it.
+pub fn escape_json(out: &mut Vec<u8>, bytes: &[u8]) {
+    for &c in bytes {
+        match c {
+            b'\x08' => out.extend_from_slice(b"\\b"),
+            b'\t' => out.extend_from_slice(b"\\t"),
+            b'\n' => out.extend_from_slice(b"\\n"),
+            b'\r' => out.extend_from_slice(b"\\r"),
+            b'\x0c' => out.extend_from_slice(b"\\f"),
+            b'"' => out.extend_from_slice(b"\\\""),
+            b'\\' => out.extend_from_slice(b"\\\\"),
+            0x00..=0x1f => out.extend_from_slice(format!("\\u{c:04x}").as_bytes()),
+            _ => out.push(c),
+        }
+    }
+}
+
+/// Base16, lowercase. Upstream uses this for tag 23 byte strings.
+pub fn base16(out: &mut Vec<u8>, bytes: &[u8]) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize]);
+        out.push(HEX[(b & 0xf) as usize]);
+    }
+}
+
+const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const B64URL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+/// Base64 with `=` padding (RFC 4648 §4), for byte strings tagged 22.
+pub fn base64(out: &mut Vec<u8>, bytes: &[u8]) {
+    encode_base64(out, bytes, B64, Some(b'='));
+}
+
+/// Base64url without padding (RFC 4648 §5), which is the default for byte
+/// strings. Upstream's alphabet table has no 65th character here, so the
+/// padding is simply omitted rather than replaced.
+pub fn base64url(out: &mut Vec<u8>, bytes: &[u8]) {
+    encode_base64(out, bytes, B64URL, None);
+}
+
+fn encode_base64(out: &mut Vec<u8>, bytes: &[u8], alphabet: &[u8; 64], pad: Option<u8>) {
+    let mut chunks = bytes.chunks_exact(3);
+    for c in &mut chunks {
+        let v = ((c[0] as u32) << 16) | ((c[1] as u32) << 8) | c[2] as u32;
+        for shift in [18, 12, 6, 0] {
+            out.push(alphabet[((v >> shift) & 0x3f) as usize]);
+        }
+    }
+    let rest = chunks.remainder();
+    if rest.is_empty() {
+        return;
+    }
+    // One or two bytes left. The value is left-aligned in 24 bits, so the same
+    // shifts work and the unused groups become padding.
+    let mut v = (rest[0] as u32) << 16;
+    if rest.len() == 2 {
+        v |= (rest[1] as u32) << 8;
+    }
+    out.push(alphabet[((v >> 18) & 0x3f) as usize]);
+    out.push(alphabet[((v >> 12) & 0x3f) as usize]);
+    if rest.len() == 2 {
+        out.push(alphabet[((v >> 6) & 0x3f) as usize]);
+    } else if let Some(p) = pad {
+        out.push(p);
+    }
+    if let Some(p) = pad {
+        out.push(p);
+    }
+}
+
+#[cfg(test)]
+mod json_tests {
+    use super::*;
+    use alloc::vec::Vec;
+
+    fn s(v: &[u8]) -> &str {
+        core::str::from_utf8(v).expect("test vectors are ascii or valid utf-8")
+    }
+
+    #[test]
+    fn json_escapes_only_what_json_requires() {
+        let mut v = Vec::new();
+        escape_json(&mut v, b"a\"b\\c\nd\te\x01f");
+        assert_eq!(s(&v), "a\\\"b\\\\c\\nd\\te\\u0001f");
+        // Unlike diagnostic notation, UTF-8 passes through unescaped.
+        v.clear();
+        escape_json(&mut v, "héllo 😀".as_bytes());
+        assert_eq!(s(&v), "héllo 😀");
+        // 0x7f is not a JSON control character, so it stays raw.
+        v.clear();
+        escape_json(&mut v, b"\x7f");
+        assert_eq!(v, b"\x7f");
+    }
+
+    #[test]
+    fn base64_matches_rfc4648_vectors() {
+        let cases = [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg=="),
+            ("fooba", "Zm9vYmE="),
+            ("foobar", "Zm9vYmFy"),
+        ];
+        for (input, want) in cases {
+            let mut v = Vec::new();
+            base64(&mut v, input.as_bytes());
+            assert_eq!(s(&v), want, "base64({input:?})");
+        }
+    }
+
+    #[test]
+    fn base64url_is_unpadded_and_uses_the_url_alphabet() {
+        let mut v = Vec::new();
+        base64url(&mut v, &[0xfb, 0xff, 0xbe]);
+        assert_eq!(s(&v), "-_--"); // + and / would appear here in standard base64
+        v.clear();
+        base64url(&mut v, b"f");
+        assert_eq!(s(&v), "Zg"); // no padding
+        v.clear();
+        base64(&mut v, &[0xfb, 0xff, 0xbe]);
+        assert_eq!(s(&v), "+/++");
+    }
+
+    #[test]
+    fn base16_is_lowercase() {
+        let mut v = Vec::new();
+        base16(&mut v, &[0x00, 0xde, 0xad, 0xff]);
+        assert_eq!(s(&v), "00deadff");
     }
 }

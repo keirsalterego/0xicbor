@@ -136,3 +136,39 @@ that `tests/original/` stays clean enough to hash-verify.
 Worth noting because it dates any guide written against tinycbor. There are no `.pro` files
 at `9441b2ca`; the suite is `CMakeLists.txt` throughout. The port targets the current tree,
 not the qmake-era one.
+
+## 12. The only C symbol we call is libc's `fwrite`
+
+The rule is no source-language runtime: a C-to-Rust port must not FFI back into the
+library it replaces. This port does not. `cargo tree` is two crates and nothing else, there
+is no `build.rs`, no `cc`, no `bindgen`, and `libtinycbor.a` is compiled entirely from Rust.
+The differential fuzz oracle is upstream's C built as a standalone binary and driven as a
+subprocess over a pipe.
+
+There is exactly one `extern "C"` declaration in the tree:
+
+```rust
+extern "C" {
+    fn fwrite(ptr: *const c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
+}
+```
+
+That is libc, not tinycbor, and it is forced by the ABI rather than chosen. The signature we
+have to implement is:
+
+```c
+CborError cbor_value_to_pretty_advance(FILE *out, CborValue *value);
+```
+
+`FILE` is an opaque libc type owned by libc. A caller hands us one it opened, and the only
+way to write to it is to call libc. Going through `fileno()` and `write()` would still be
+libc, just less direct.
+
+This is not a loophole, because it does not get us anything. Rust's `std` links libc on
+Linux in every program ever compiled; if the rule barred that, no Rust port could exist on
+this platform. What the rule is actually about — reusing the original implementation instead
+of rewriting it — is not happening anywhere here, and the empty `nm` diff against a library
+built from entirely different source is the evidence.
+
+`cbor-core`, which is the whole CBOR implementation, has no `extern` blocks at all and is
+`#![no_std]`.
