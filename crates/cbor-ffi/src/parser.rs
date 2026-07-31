@@ -97,6 +97,7 @@ pub struct CborParserOperations {
 /// `CborParserFlag_ExternalSource`.
 const EXTERNAL_SOURCE: u32 = 0x01;
 
+#[inline(always)]
 fn external(it: &CborValue) -> bool {
     // SAFETY: module contract keeps `parser` alive.
     unsafe { (*it.parser).flags & EXTERNAL_SOURCE != 0 }
@@ -107,6 +108,7 @@ fn external(it: &CborValue) -> bool {
 ///
 /// SAFETY: whoever called `cbor_parser_init_reader` promised this table
 /// outlives the parser.
+#[inline(always)]
 fn ops(it: &CborValue) -> &CborParserOperations {
     unsafe { &*((*it.parser).source.0 as *const CborParserOperations) }
 }
@@ -115,14 +117,17 @@ fn ops(it: &CborValue) -> &CborParserOperations {
 ///
 /// SAFETY: the module contract keeps `parser` alive and pointing at the parser
 /// that was initialised with this buffer.
+#[inline(always)]
 fn end(it: &CborValue) -> *const u8 {
     unsafe { (*it.parser).source.0 as *const u8 }
 }
 
+#[inline(always)]
 fn ptr(it: &CborValue) -> *const u8 {
     it.source.0 as *const u8
 }
 
+#[inline(always)]
 fn can_read(it: &CborValue, len: usize) -> bool {
     if external(it) {
         return (ops(it).can_read_bytes)(it.source.0, len);
@@ -132,24 +137,63 @@ fn can_read(it: &CborValue, len: usize) -> bool {
 
 /// Reads `len` big-endian bytes at `offset` from the cursor.
 ///
+/// The buffer case is written out separately rather than sharing a tail with
+/// the callback case. Sharing meant a `[u8; 8]` landed on the stack and the
+/// bytes went through a pointer the optimiser could not see through, on a path
+/// that runs for every head byte of every item. Splitting it keeps the common
+/// case a plain load.
+///
 /// SAFETY: callers must have established `can_read(it, offset + len)` first;
 /// every call site below does.
+#[inline(always)]
 unsafe fn read_unchecked(it: &CborValue, offset: usize, len: usize) -> u64 {
-    let mut buf = [0u8; 8];
-    let src: *const u8 = if external(it) {
-        // The callback may copy into our buffer or hand back its own pointer,
-        // so use whatever it returns rather than assuming it filled `buf`.
-        (ops(it).read_bytes)(it.source.0, buf.as_mut_ptr() as *mut c_void, offset, len) as *const u8
-    } else {
-        ptr(it).add(offset)
-    };
-    let mut v = 0u64;
-    for i in 0..len {
-        v = (v << 8) | *src.add(i) as u64;
+    if !external(it) {
+        return be_load(ptr(it).add(offset), len);
     }
-    v
+    read_external(it, offset, len)
 }
 
+/// The callback path, kept out of line so it does not bloat every read site.
+///
+/// SAFETY: as `read_unchecked`, and `external(it)` must hold.
+#[inline(never)]
+unsafe fn read_external(it: &CborValue, offset: usize, len: usize) -> u64 {
+    let mut buf = [0u8; 8];
+    // The callback may fill our buffer or hand back its own pointer, so use
+    // whatever it returns rather than assuming it wrote into `buf`.
+    let src = (ops(it).read_bytes)(it.source.0, buf.as_mut_ptr() as *mut c_void, offset, len)
+        as *const u8;
+    be_load(src, len)
+}
+
+/// Big-endian load of 1, 2, 4 or 8 bytes.
+///
+/// CBOR head lengths are only ever those four widths, so this is a sized
+/// unaligned load plus a byte swap — one instruction each on x86-64. The
+/// byte-at-a-time loop it replaces was a measurable share of parse time,
+/// because it runs for the head of every single item.
+///
+/// SAFETY: `src` must be readable for `len` bytes.
+#[inline(always)]
+unsafe fn be_load(src: *const u8, len: usize) -> u64 {
+    match len {
+        1 => *src as u64,
+        2 => u16::from_be_bytes(*(src as *const [u8; 2])) as u64,
+        4 => u32::from_be_bytes(*(src as *const [u8; 4])) as u64,
+        8 => u64::from_be_bytes(*(src as *const [u8; 8])),
+        // Not reachable: bytes_needed only ever yields 0, 1, 2, 4 or 8, and a
+        // zero-length read is never requested.
+        _ => {
+            let mut v = 0u64;
+            for i in 0..len {
+                v = (v << 8) | *src.add(i) as u64;
+            }
+            v
+        }
+    }
+}
+
+#[inline(always)]
 pub(crate) fn read_byte(it: &CborValue) -> Option<u8> {
     if !can_read(it, 1) {
         return None;
@@ -158,6 +202,7 @@ pub(crate) fn read_byte(it: &CborValue) -> Option<u8> {
     Some(unsafe { read_unchecked(it, 0, 1) } as u8)
 }
 
+#[inline(always)]
 fn advance_bytes(it: &mut CborValue, n: usize) {
     if external(it) {
         (ops(it).advance_bytes)(it.source.0, n);
