@@ -233,3 +233,149 @@ impl<'a> Getopt<'a> {
         self.operands
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Renders a document the way `dump` does, but into a string.
+    fn render(bytes: &[u8], print_json: bool, flags: i32) -> Result<String, CborError> {
+        let mut r = cbor::Reader::new(bytes);
+        let mut out = Vec::new();
+        if print_json {
+            json::value(&mut out, &mut r, flags)?;
+        } else {
+            let mut text = String::new();
+            pretty::value(
+                &mut text,
+                &mut r,
+                flags,
+                cbor::MAX_RECURSIONS,
+                cbor::After::Stop,
+            )?;
+            out = text.into_bytes();
+        }
+        if r.pos != bytes.len() {
+            return Err(CborError::GarbageAtEnd);
+        }
+        Ok(String::from_utf8_lossy(&out).into_owned())
+    }
+
+    #[test]
+    fn diagnostic_notation() {
+        // RFC 8949 Appendix A, plus the shapes with an encoding of their own.
+        for (bytes, want) in [
+            (&b"\x00"[..], "0"),
+            (b"\x20", "-1"),
+            (
+                b"\x3b\xff\xff\xff\xff\xff\xff\xff\xff",
+                "-18446744073709551616",
+            ),
+            (b"\x44\x01\x02\x03\x04", "h'01020304'"),
+            (b"\x64\xc3\xa9\x21\x21", "\"\\u00E9!!\""),
+            (b"\x83\x01\x02\x03", "[1, 2, 3]"),
+            (b"\x9f\x01\xff", "[_ 1]"),
+            (b"\xa1\x61\x61\x01", "{\"a\": 1}"),
+            (b"\xbf\xff", "{_ }"),
+            (b"\xc0\x61\x61", "0(\"a\")"),
+            (b"\xf4", "false"),
+            (b"\xf6", "null"),
+            (b"\xf7", "undefined"),
+            (b"\xf8\x20", "simple(32)"),
+            (b"\xf9\x3c\x00", "1.f16"),
+            (b"\xfa\x47\xc3\x50\x00", "100000.f"),
+            (
+                b"\xfb\x40\x09\x21\xfb\x54\x44\x2d\x18",
+                "3.1415926535897931",
+            ),
+            (b"\xfb\x7f\xf8\x00\x00\x00\x00\x00\x00", "nan"),
+            // Merged fragments take their indicator from the first chunk, so
+            // this one has none while an empty chunked string has "_".
+            (b"\x5f\x41\x61\xff", "h'61'"),
+            (b"\x5f\xff", "h''_"),
+        ] {
+            assert_eq!(
+                render(bytes, false, pretty::DEFAULT_FLAGS).as_deref(),
+                Ok(want)
+            );
+        }
+    }
+
+    #[test]
+    fn json_conversion() {
+        let flags = json::ADD_METADATA;
+        assert_eq!(
+            render(b"\x83\x01\x02\x03", true, 0).as_deref(),
+            Ok("[1,2,3]")
+        );
+        assert_eq!(
+            render(b"\xa1\x61\x61\x01", true, 0).as_deref(),
+            Ok("{\"a\":1}")
+        );
+        // Byte strings are not native to JSON, and the metadata says so.
+        assert_eq!(
+            render(b"\xa1\x61\x61\x44\x01\x02\x03\x04", true, flags).as_deref(),
+            Ok("{\"a\":\"AQIDBA\",\"a$cbor\":{\"t\":64}}")
+        );
+        // Tag 23 asks for base16 and is obeyed unless -U overrides it.
+        assert_eq!(
+            render(b"\xd7\x44\x01\x02\x03\x04", true, 0).as_deref(),
+            Ok("\"01020304\"")
+        );
+        assert_eq!(
+            render(
+                b"\xd7\x44\x01\x02\x03\x04",
+                true,
+                json::BYTE_STRINGS_TO_BASE64URL
+            )
+            .as_deref(),
+            Ok("\"AQIDBA\"")
+        );
+        // A non-string key fails unless it may be stringified.
+        assert_eq!(
+            render(b"\xa1\x01\x02", true, 0),
+            Err(CborError::JsonObjectKeyNotString)
+        );
+        assert_eq!(
+            render(b"\xa1\x01\x02", true, json::STRINGIFY_MAP_KEYS).as_deref(),
+            Ok("{\"1\":2}")
+        );
+    }
+
+    #[test]
+    fn malformed_input_is_named_the_way_upstream_names_it() {
+        for (bytes, want) in [
+            (&b""[..], CborError::UnexpectedEOF),
+            (b"\x18", CborError::UnexpectedEOF),
+            (b"\x1c", CborError::IllegalNumber),
+            (b"\xfc", CborError::UnknownType),
+            (b"\xff", CborError::UnexpectedBreak),
+            (b"\xf8\x00", CborError::IllegalSimpleType),
+            (b"\x1f", CborError::IllegalNumber),
+            (b"\x5f\x61\x61\xff", CborError::IllegalType),
+            (b"\x63\xff\xff\xff", CborError::InvalidUtf8TextString),
+            (b"\x00\x00", CborError::GarbageAtEnd),
+            (b"\xbf\x01\xff", CborError::UnexpectedBreak),
+        ] {
+            assert_eq!(
+                render(bytes, false, pretty::DEFAULT_FLAGS),
+                Err(want),
+                "{bytes:02x?}"
+            );
+        }
+    }
+
+    #[test]
+    fn options_stop_at_the_first_operand() {
+        let argv: Vec<String> = ["cbordump", "-cj", "file", "-j"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mut opts = Getopt::new(&argv, "MOSUcjhfn");
+        assert!(matches!(opts.next(), Some(Ok('c'))));
+        assert!(matches!(opts.next(), Some(Ok('j'))));
+        assert!(opts.next().is_none());
+        // The trailing -j is a file name, not an option.
+        assert_eq!(opts.operands(), ["file", "-j"]);
+    }
+}

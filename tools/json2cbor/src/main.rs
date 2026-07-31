@@ -203,3 +203,113 @@ impl<'a> Getopt<'a> {
         self.operands
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cbor_core::CborError;
+
+    fn convert(text: &str, metadata: bool) -> Result<Vec<u8>, Option<CborError>> {
+        let document = json::parse(text.as_bytes()).ok_or(None)?;
+        let mut encoder = encode::Encoder::new(text.len() + 1);
+        encode::encode(&mut encoder, &document, metadata).map_err(Some)?;
+        Ok(encoder.out)
+    }
+
+    #[test]
+    fn plain_json() {
+        assert_eq!(convert("[1,2,3]", false), Ok(vec![0x83, 1, 2, 3]));
+        assert_eq!(
+            convert("{\"a\":true}", false),
+            Ok(vec![0xa1, 0x61, b'a', 0xf5])
+        );
+        assert_eq!(convert("null", false), Ok(vec![0xf6]));
+        assert_eq!(convert("-1", false), Ok(vec![0x20]));
+        assert_eq!(convert("1e4", false), Ok(vec![0x19, 0x27, 0x10]));
+        // Past INT_MAX cJSON's saturated `valueint` no longer matches the
+        // double, so the number stops being an integer.
+        assert_eq!(
+            convert("2147483647", false),
+            Ok(vec![0x1a, 0x7f, 0xff, 0xff, 0xff])
+        );
+        assert_eq!(
+            convert("2147483648", false),
+            Ok(vec![0xfb, 0x41, 0xe0, 0, 0, 0, 0, 0, 0])
+        );
+    }
+
+    #[test]
+    fn cjson_grammar() {
+        // Accepted by cJSON and not by RFC 8259, or the other way round.
+        assert!(convert("\"\\/\"", false).is_ok());
+        assert_eq!(convert("\"\\uZZZZ\"", false), Ok(vec![0x60])); // bad hex reads as U+0000
+        assert_eq!(convert("01", false), Ok(vec![0x01])); // a leading zero is fine
+        assert_eq!(convert("\u{feff}[1]", false), Ok(vec![0x81, 0x01])); // a BOM is skipped
+        assert!(convert("[1,]", false).is_err());
+        assert!(convert("nan", false).is_err());
+        assert!(convert("[1,2,3]x", false).is_err());
+    }
+
+    #[test]
+    fn metadata_restores_what_json_lost() {
+        // Byte string from base64url, and the same JSON without -M.
+        assert_eq!(
+            convert("{\"a\":\"AQID\",\"a$cbor\":{\"t\":64}}", true),
+            Ok(vec![0xbf, 0x61, b'a', 0x43, 1, 2, 3, 0xff])
+        );
+        assert_eq!(
+            convert("{\"a\":\"AQID\",\"a$cbor\":{\"t\":64}}", false),
+            Ok(b"\xa2\x61a\x64AQID\x66a$cbor\xa1\x61t\x18\x40".to_vec())
+        );
+        // A base64 group that is not a full four characters still decodes to
+        // three bytes, two of which are not the ones base64 says. Upstream's,
+        // and the reason a byte string whose length is not a multiple of three
+        // does not survive a cbordump -jM round trip.
+        assert_eq!(
+            convert("{\"a\":\"AQIDBA\",\"a$cbor\":{\"t\":64}}", true),
+            Ok(vec![0xbf, 0x61, b'a', 0x46, 1, 2, 3, 0, 0, 0x40, 0xff])
+        );
+        // Infinities and NaN come back through the "v" string.
+        assert_eq!(
+            convert("{\"a\":null,\"a$cbor\":{\"t\":251,\"v\":\"-inf\"}}", true),
+            Ok(vec![
+                0xbf, 0x61, b'a', 0xfb, 0xff, 0xf0, 0, 0, 0, 0, 0, 0, 0xff
+            ])
+        );
+        // A tag wraps the value it was recorded against.
+        assert_eq!(
+            convert("{\"a\":1,\"a$cbor\":{\"tag\":\"55799\"}}", true),
+            Ok(vec![0xbf, 0x61, b'a', 0xd9, 0xd9, 0xf7, 0x01, 0xff])
+        );
+        // Simple values 25 to 31 are the float encodings and the break code.
+        assert_eq!(
+            convert("{\"a\":0,\"a$cbor\":{\"t\":224,\"v\":25}}", true),
+            Err(Some(CborError::IllegalSimpleType))
+        );
+    }
+
+    #[test]
+    fn buffer_runs_out_only_where_upstream_lets_it() {
+        // The encoder gets the size of the JSON text plus one, and CBOR is
+        // shorter than JSON except for doubles — which may grow the buffer.
+        assert_eq!(
+            convert("0.5", false),
+            Ok(vec![0xfb, 0x3f, 0xe0, 0, 0, 0, 0, 0, 0])
+        );
+        // "1e5" is three bytes of JSON and five of CBOR, and an integer may
+        // not grow the buffer the way a double may.
+        assert_eq!(convert("1e5", false), Err(Some(CborError::OutOfMemory)));
+    }
+
+    #[test]
+    fn options_move_to_the_front() {
+        let argv: Vec<String> = ["json2cbor", "file", "-M", "more"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mut opts = Getopt::new(&argv, "M");
+        assert!(matches!(opts.next(), Some(Ok('M'))));
+        assert!(opts.next().is_none());
+        assert_eq!(opts.operands(), ["file", "more"]);
+    }
+}
