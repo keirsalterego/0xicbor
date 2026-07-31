@@ -20,8 +20,11 @@ use alloc::vec::Vec;
 /// digits that every double round-trips.
 pub fn format_g(v: f64, precision: usize) -> String {
     if v.is_nan() {
-        // C prints an unsigned "nan" here; glibc only signs it with %+g.
-        return "nan".to_string();
+        // glibc prints the sign bit of a NaN, so -NaN is "-nan". Rust's own
+        // Display drops it, and Python's %g normalises it away, so both are
+        // misleading references here — this was found by differential fuzzing
+        // against the C library, not by reasoning about it.
+        return if v.is_sign_negative() { "-nan" } else { "nan" }.to_string();
     }
     if v.is_infinite() {
         return if v < 0.0 { "-inf" } else { "inf" }.to_string();
@@ -123,6 +126,8 @@ mod tests {
         assert_eq!(format_g(f64::INFINITY, 17), "inf");
         assert_eq!(format_g(f64::NEG_INFINITY, 17), "-inf");
         assert_eq!(format_g(f64::NAN, 17), "nan");
+        // glibc signs a NaN. Confirmed against the C oracle, not assumed.
+        assert_eq!(format_g(-f64::NAN, 17), "-nan");
     }
 
     #[test]
