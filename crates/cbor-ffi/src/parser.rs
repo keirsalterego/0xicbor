@@ -825,20 +825,27 @@ pub extern "C" fn cbor_value_text_string_equals(
 ) -> c_int {
     // SAFETY: module contract; `string` is a NUL-terminated C string.
     unsafe {
-        let v = as_ref(value);
-        if v.type_ != TYPE_TEXT_STRING {
+        // A tagged string is still that string as far as comparison goes.
+        let mut copy = clone(as_ref(value));
+        let err = cbor_value_skip_tag(&mut copy);
+        if err != NO_ERROR {
+            return err;
+        }
+        if copy.type_ != TYPE_TEXT_STRING {
             *result = false;
             return NO_ERROR;
         }
-        let mut len = 0usize;
-        while *string.add(len) != 0 {
-            len += 1;
+
+        let mut buflen = 0usize;
+        while *string.add(buflen) != 0 {
+            buflen += 1;
         }
-        // Capacity is the string length plus its NUL, so the trailing-NUL
-        // comparison runs and rejects a proper prefix.
-        let mut buflen = len + 1;
+        // Capacity is strlen, not strlen+1. The NUL comparison then runs only
+        // when the CBOR string is *shorter* than expected, which is exactly the
+        // case that has to fail; for equal lengths there is no spare byte and
+        // no comparison, and for equal empty strings nothing is compared at all.
         iterate_string_chunks(
-            v,
+            &copy,
             string as *mut u8,
             &mut buflen,
             &mut *result,
@@ -877,7 +884,7 @@ pub extern "C" fn cbor_value_map_find_value(
 
             if e.type_ == TYPE_TEXT_STRING {
                 let mut equals = false;
-                let mut buflen = len + 1;
+                let mut buflen = len;
                 let err = iterate_string_chunks(
                     e,
                     string as *mut u8,
