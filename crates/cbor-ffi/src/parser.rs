@@ -81,7 +81,37 @@ unsafe fn as_ref<'a>(p: *const CborValue) -> &'a CborValue {
     &*p
 }
 
-/// The one-past-the-end pointer of the buffer this value is parsing.
+/// The callback table a caller supplies to `cbor_parser_init_reader`.
+///
+/// With an external source there is no buffer to point into: the cursor is an
+/// opaque token and every read goes through these. That is why the accessors
+/// below dispatch rather than doing pointer arithmetic.
+#[repr(C)]
+pub struct CborParserOperations {
+    pub can_read_bytes: extern "C" fn(*mut c_void, usize) -> bool,
+    pub read_bytes: extern "C" fn(*mut c_void, *mut c_void, usize, usize) -> *mut c_void,
+    pub advance_bytes: extern "C" fn(*mut c_void, usize),
+    pub transfer_string: extern "C" fn(*mut c_void, *mut *const c_void, usize, usize) -> c_int,
+}
+
+/// `CborParserFlag_ExternalSource`.
+const EXTERNAL_SOURCE: u32 = 0x01;
+
+fn external(it: &CborValue) -> bool {
+    // SAFETY: module contract keeps `parser` alive.
+    unsafe { (*it.parser).flags & EXTERNAL_SOURCE != 0 }
+}
+
+/// The operations table. Only meaningful when [`external`] is true, where the
+/// parser's `source` word holds the table instead of a buffer end.
+///
+/// SAFETY: whoever called `cbor_parser_init_reader` promised this table
+/// outlives the parser.
+fn ops(it: &CborValue) -> &CborParserOperations {
+    unsafe { &*((*it.parser).source.0 as *const CborParserOperations) }
+}
+
+/// One-past-the-end of the buffer. Buffer sources only.
 ///
 /// SAFETY: the module contract keeps `parser` alive and pointing at the parser
 /// that was initialised with this buffer.
@@ -94,32 +124,67 @@ fn ptr(it: &CborValue) -> *const u8 {
 }
 
 fn can_read(it: &CborValue, len: usize) -> bool {
+    if external(it) {
+        return (ops(it).can_read_bytes)(it.source.0, len);
+    }
     (end(it) as usize).saturating_sub(ptr(it) as usize) >= len
 }
 
-/// Reads `len` bytes at `offset` from the cursor without checking bounds.
+/// Reads `len` big-endian bytes at `offset` from the cursor.
 ///
 /// SAFETY: callers must have established `can_read(it, offset + len)` first;
 /// every call site below does.
 unsafe fn read_unchecked(it: &CborValue, offset: usize, len: usize) -> u64 {
+    let mut buf = [0u8; 8];
+    let src: *const u8 = if external(it) {
+        // The callback may copy into our buffer or hand back its own pointer,
+        // so use whatever it returns rather than assuming it filled `buf`.
+        (ops(it).read_bytes)(it.source.0, buf.as_mut_ptr() as *mut c_void, offset, len) as *const u8
+    } else {
+        ptr(it).add(offset)
+    };
     let mut v = 0u64;
     for i in 0..len {
-        v = (v << 8) | *ptr(it).add(offset + i) as u64;
+        v = (v << 8) | *src.add(i) as u64;
     }
     v
 }
 
 pub(crate) fn read_byte(it: &CborValue) -> Option<u8> {
-    if can_read(it, 1) {
-        // SAFETY: just bounds-checked.
-        Some(unsafe { *ptr(it) })
-    } else {
-        None
+    if !can_read(it, 1) {
+        return None;
     }
+    // SAFETY: just bounds-checked.
+    Some(unsafe { read_unchecked(it, 0, 1) } as u8)
 }
 
 fn advance_bytes(it: &mut CborValue, n: usize) {
+    if external(it) {
+        (ops(it).advance_bytes)(it.source.0, n);
+        return;
+    }
     it.source.0 = (it.source.0 as usize).wrapping_add(n) as *mut c_void;
+}
+
+/// Points `out` at `len` bytes of string content starting `offset` ahead, and
+/// steps the cursor past them. An external source may materialise the bytes
+/// itself, which is why it gets to answer this rather than us computing it.
+fn transfer_string(
+    it: &mut CborValue,
+    out: &mut *const c_void,
+    offset: usize,
+    len: usize,
+) -> c_int {
+    if external(it) {
+        return (ops(it).transfer_string)(it.source.0, out, offset, len);
+    }
+    advance_bytes(it, offset);
+    if !can_read(it, len) {
+        return ERR_UNEXPECTED_EOF;
+    }
+    *out = ptr(it) as *const c_void;
+    advance_bytes(it, len);
+    NO_ERROR
 }
 
 /// How many extra length bytes follow a head with this additional-info value.
@@ -329,16 +394,31 @@ pub extern "C" fn cbor_parser_init(
     }
 }
 
-/// Callback-driven parsing is not implemented yet; buffer parsing covers the
-/// whole suite except the reader tests.
+/// Parsing from a caller-supplied source rather than a flat buffer. The
+/// `CborValue::source` word holds the caller's token instead of a pointer, and
+/// `CborParser::source` holds the operations table instead of a buffer end.
 #[no_mangle]
 pub extern "C" fn cbor_parser_init_reader(
-    _ops: *const c_void,
-    _parser: *mut CborParser,
-    _it: *mut CborValue,
-    _token: *mut c_void,
+    operations: *const c_void,
+    parser: *mut CborParser,
+    it: *mut CborValue,
+    token: *mut c_void,
 ) -> c_int {
-    c_int::MAX
+    // SAFETY: module contract.
+    unsafe {
+        let p = &mut *parser;
+        p.source.0 = operations as *mut c_void;
+        p.flags = EXTERNAL_SOURCE;
+
+        let v = as_mut(it);
+        v.parser = parser;
+        v.source.0 = token;
+        v.remaining = 1;
+        v.extra = 0;
+        v.type_ = TYPE_INVALID;
+        v.flags = 0;
+        preparse_value(v)
+    }
 }
 
 // -- navigation ------------------------------------------------------------
@@ -901,16 +981,14 @@ pub extern "C" fn _cbor_value_get_string_chunk(
             Err(e) => return e,
         };
         let mut cursor = clone(it);
-        advance_bytes(&mut cursor, offset);
-        if !can_read(&cursor, n) {
-            return ERR_UNEXPECTED_EOF;
+        let err = transfer_string(&mut cursor, &mut *bufferptr, offset, n);
+        if err != NO_ERROR {
+            return err;
         }
-        *bufferptr = ptr(&cursor) as *const c_void;
         *len = n;
 
         let out = as_mut(next);
         *out = cursor;
-        advance_bytes(out, n);
         out.flags &= !F_BEFORE_FIRST_CHUNK;
         NO_ERROR
     }
