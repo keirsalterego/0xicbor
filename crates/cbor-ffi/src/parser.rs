@@ -231,7 +231,9 @@ pub(crate) fn decode_int64_internal(it: &CborValue) -> u64 {
 fn extract_number_and_advance(it: &mut CborValue) -> u64 {
     let v = extract_int64(it);
     // SAFETY: preparse established that the head byte is readable.
-    let descriptor = unsafe { *ptr(it) } & SMALL_VALUE_MASK;
+    // Must go through read_unchecked, not the buffer pointer: with an external
+    // source `it.source` is an opaque token and dereferencing it reads garbage.
+    let descriptor = unsafe { read_unchecked(it, 0, 1) } as u8 & SMALL_VALUE_MASK;
     advance_bytes(it, bytes_needed(descriptor) + 1);
     v
 }
@@ -303,12 +305,12 @@ fn preparse_value(it: &mut CborValue) -> c_int {
             SINGLE_PRECISION_FLOAT | DOUBLE_PRECISION_FLOAT => {
                 it.flags |= F_TOO_LARGE;
                 // SAFETY: the head byte was read above.
-                it.type_ = unsafe { *ptr(it) };
+                it.type_ = unsafe { read_unchecked(it, 0, 1) } as u8;
             }
             21..=23 | 25 => {
                 // true, null, undefined, half-float: the head byte is the type.
                 // SAFETY: the head byte was read above.
-                it.type_ = unsafe { *ptr(it) };
+                it.type_ = unsafe { read_unchecked(it, 0, 1) } as u8;
             }
             // A simple value below 32 must use the one-byte form; spelling it
             // in two bytes is an overlong encoding.
