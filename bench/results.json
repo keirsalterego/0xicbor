@@ -1,0 +1,621 @@
+{
+  "environment": {
+    "cpu_model": "Intel(R) Core(TM) i5-10200H CPU @ 2.40GHz",
+    "cpu_count": 8,
+    "scaling_governor": "performance",
+    "intel_pstate_no_turbo": "0",
+    "kernel": "7.0.12+kali-amd64",
+    "loadavg": [
+      4.4501953125,
+      3.994140625,
+      3.40185546875
+    ],
+    "cc_version": "cc (Debian 15.3.0-1) 15.3.0",
+    "rustc_version": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "c_reference_cflags": "-O3 -DNDEBUG (CMAKE_BUILD_TYPE=Release, upstream CMakeCache)",
+    "rust_profile": "release, lto=true, codegen-units=1, panic=abort",
+    "pinned_to_cpu": "2",
+    "libs_as_linked": {
+      "linked_at_utc": "2026-07-31T19:52:10Z",
+      "c_reference": {
+        "path": "/home/keir/0xicbor/bench/reference/libtinycbor-upstream.a",
+        "bytes": 76334,
+        "sha256": "676f1102227f4893f4cd3aea2d8e356218fbe810123d68389af973628ac55635",
+        "matches_current_tree": true
+      },
+      "rust": {
+        "path": "/home/keir/0xicbor/target/release/libtinycbor.a",
+        "bytes": 22188974,
+        "sha256": "a936412fb907ed9fd3a9950b5677633294a850ca7a1a39b62073a0b2a0f01b24",
+        "matches_current_tree": true
+      }
+    },
+    "timestamp_utc": "2026-07-31T19:52:55Z"
+  },
+  "output_equivalence": {
+    "small_ints.cbor": {
+      "identical": true,
+      "c_sha256": "32b1e6b5fc2ca4c42a5a300d2e35081351fe34f013e81d4321785bf5bb945dbf",
+      "rust_sha256": "32b1e6b5fc2ca4c42a5a300d2e35081351fe34f013e81d4321785bf5bb945dbf",
+      "c_output_bytes": 132,
+      "rust_output_bytes": 132
+    },
+    "flat_array.cbor": {
+      "identical": true,
+      "c_sha256": "941b73c6e4d57b1ea8cad5690d9ef7b6f3e4f7ae0b1d5ed2e6eab02b998f5730",
+      "rust_sha256": "941b73c6e4d57b1ea8cad5690d9ef7b6f3e4f7ae0b1d5ed2e6eab02b998f5730",
+      "c_output_bytes": 416772,
+      "rust_output_bytes": 416772
+    },
+    "deep_nest.cbor": {
+      "identical": true,
+      "c_sha256": "55e5b31740911de54ad01f0837486080f0737a8fcfdd5c8880db378d49afea7e",
+      "rust_sha256": "55e5b31740911de54ad01f0837486080f0737a8fcfdd5c8880db378d49afea7e",
+      "c_output_bytes": 379763,
+      "rust_output_bytes": 379763
+    },
+    "map_heavy.cbor": {
+      "identical": true,
+      "c_sha256": "0ec22810e53f519c0172042df52feefb5ba309c1b71f7a1019badcaf63368737",
+      "rust_sha256": "0ec22810e53f519c0172042df52feefb5ba309c1b71f7a1019badcaf63368737",
+      "c_output_bytes": 595829,
+      "rust_output_bytes": 595829
+    },
+    "text_utf8.cbor": {
+      "identical": true,
+      "c_sha256": "9e6f02cdd6d36d9c33d3130e4a707d3f15f607d9d73a02192ecb032b607adb5f",
+      "rust_sha256": "9e6f02cdd6d36d9c33d3130e4a707d3f15f607d9d73a02192ecb032b607adb5f",
+      "c_output_bytes": 968203,
+      "rust_output_bytes": 968203
+    },
+    "bytes_heavy.cbor": {
+      "identical": true,
+      "c_sha256": "e5b9edfc667a747e1dc345db7d95d42e957648aaac255f358db11599e9dc5152",
+      "rust_sha256": "e5b9edfc667a747e1dc345db7d95d42e957648aaac255f358db11599e9dc5152",
+      "c_output_bytes": 1256405,
+      "rust_output_bytes": 1256405
+    },
+    "indefinite.cbor": {
+      "identical": true,
+      "c_sha256": "eeb7fd9167bfb72d4e7fa68b26d2372bc10e2e0936a92633a0388282e3918ca7",
+      "rust_sha256": "eeb7fd9167bfb72d4e7fa68b26d2372bc10e2e0936a92633a0388282e3918ca7",
+      "c_output_bytes": 291486,
+      "rust_output_bytes": 291486
+    },
+    "tagged.cbor": {
+      "identical": true,
+      "c_sha256": "4faaad2d8ac5f941d7d18330c0684fd9d5241ac2a714432553c81f0a367225d7",
+      "rust_sha256": "4faaad2d8ac5f941d7d18330c0684fd9d5241ac2a714432553c81f0a367225d7",
+      "c_output_bytes": 178817,
+      "rust_output_bytes": 178817
+    }
+  },
+  "startup": {
+    "c": {
+      "runs": 200,
+      "p50_ns": 775821,
+      "p99_ns": 1204296,
+      "min_ns": 697581,
+      "binary_bytes": 43856
+    },
+    "rust": {
+      "runs": 200,
+      "p50_ns": 840694,
+      "p99_ns": 1272817,
+      "min_ns": 769719,
+      "binary_bytes": 5197416
+    },
+    "rust_vs_c_p50": 1.0836,
+    "rust_vs_c_p99": 1.0569,
+    "verdict": "rust slower"
+  },
+  "throughput": {
+    "parse": {
+      "small_ints.cbor": {
+        "bytes": 58,
+        "reps_per_block": 50000,
+        "warmup_discarded": 5000,
+        "rounds": 4,
+        "timer_overhead_ns": 14,
+        "c": {
+          "samples": 180000,
+          "p50_ns": 192,
+          "p99_ns": 297,
+          "min_ns": 180,
+          "max_ns": 322636,
+          "p50_mb_per_s": 302.08,
+          "peak_rss_kib": 2096
+        },
+        "rust": {
+          "samples": 180000,
+          "p50_ns": 261,
+          "p99_ns": 401,
+          "min_ns": 250,
+          "max_ns": 233396,
+          "p50_mb_per_s": 222.22,
+          "peak_rss_kib": 2516
+        },
+        "rust_vs_c_p50": 1.3594,
+        "rust_vs_c_p99": 1.3502,
+        "verdict": "rust slower"
+      },
+      "flat_array.cbor": {
+        "bytes": 163797,
+        "reps_per_block": 240,
+        "warmup_discarded": 24,
+        "rounds": 4,
+        "timer_overhead_ns": 14,
+        "c": {
+          "samples": 864,
+          "p50_ns": 976365,
+          "p99_ns": 1254066,
+          "min_ns": 940996,
+          "max_ns": 1283162,
+          "p50_mb_per_s": 167.76,
+          "peak_rss_kib": 1872
+        },
+        "rust": {
+          "samples": 864,
+          "p50_ns": 1202048,
+          "p99_ns": 1677825,
+          "min_ns": 1131219,
+          "max_ns": 1884103,
+          "p50_mb_per_s": 136.26,
+          "peak_rss_kib": 2368
+        },
+        "rust_vs_c_p50": 1.2311,
+        "rust_vs_c_p99": 1.3379,
+        "verdict": "rust slower"
+      },
+      "deep_nest.cbor": {
+        "bytes": 191490,
+        "reps_per_block": 92,
+        "warmup_discarded": 9,
+        "rounds": 4,
+        "timer_overhead_ns": 15,
+        "c": {
+          "samples": 332,
+          "p50_ns": 2151374,
+          "p99_ns": 3194173,
+          "min_ns": 2049666,
+          "max_ns": 3433637,
+          "p50_mb_per_s": 89.01,
+          "peak_rss_kib": 1964
+        },
+        "rust": {
+          "samples": 332,
+          "p50_ns": 3208669,
+          "p99_ns": 5442275,
+          "min_ns": 3068530,
+          "max_ns": 5884648,
+          "p50_mb_per_s": 59.68,
+          "peak_rss_kib": 2332
+        },
+        "rust_vs_c_p50": 1.4915,
+        "rust_vs_c_p99": 1.7038,
+        "verdict": "rust slower"
+      },
+      "map_heavy.cbor": {
+        "bytes": 338938,
+        "reps_per_block": 132,
+        "warmup_discarded": 13,
+        "rounds": 4,
+        "timer_overhead_ns": 14,
+        "c": {
+          "samples": 476,
+          "p50_ns": 919484,
+          "p99_ns": 1258499,
+          "min_ns": 869689,
+          "max_ns": 1347779,
+          "p50_mb_per_s": 368.62,
+          "peak_rss_kib": 2104
+        },
+        "rust": {
+          "samples": 476,
+          "p50_ns": 1682853,
+          "p99_ns": 2603571,
+          "min_ns": 1595940,
+          "max_ns": 2799009,
+          "p50_mb_per_s": 201.41,
+          "peak_rss_kib": 2544
+        },
+        "rust_vs_c_p50": 1.8302,
+        "rust_vs_c_p99": 2.0688,
+        "verdict": "rust slower"
+      },
+      "text_utf8.cbor": {
+        "bytes": 563721,
+        "reps_per_block": 28277,
+        "warmup_discarded": 2827,
+        "rounds": 4,
+        "timer_overhead_ns": 15,
+        "c": {
+          "samples": 101800,
+          "p50_ns": 6456,
+          "p99_ns": 12976,
+          "min_ns": 5960,
+          "max_ns": 84610,
+          "p50_mb_per_s": 87317.38,
+          "peak_rss_kib": 2548
+        },
+        "rust": {
+          "samples": 101800,
+          "p50_ns": 11120,
+          "p99_ns": 22822,
+          "min_ns": 10453,
+          "max_ns": 278785,
+          "p50_mb_per_s": 50694.33,
+          "peak_rss_kib": 2824
+        },
+        "rust_vs_c_p50": 1.7224,
+        "rust_vs_c_p99": 1.7588,
+        "verdict": "rust slower"
+      },
+      "bytes_heavy.cbor": {
+        "bytes": 628060,
+        "reps_per_block": 7778,
+        "warmup_discarded": 777,
+        "rounds": 4,
+        "timer_overhead_ns": 14,
+        "c": {
+          "samples": 28004,
+          "p50_ns": 25497,
+          "p99_ns": 43684,
+          "min_ns": 22833,
+          "max_ns": 94659,
+          "p50_mb_per_s": 24632.7,
+          "peak_rss_kib": 2384
+        },
+        "rust": {
+          "samples": 28004,
+          "p50_ns": 38062,
+          "p99_ns": 69814,
+          "min_ns": 35826,
+          "max_ns": 105723,
+          "p50_mb_per_s": 16500.97,
+          "peak_rss_kib": 2784
+        },
+        "rust_vs_c_p50": 1.4928,
+        "rust_vs_c_p99": 1.5982,
+        "verdict": "rust slower"
+      },
+      "indefinite.cbor": {
+        "bytes": 182665,
+        "reps_per_block": 413,
+        "warmup_discarded": 41,
+        "rounds": 4,
+        "timer_overhead_ns": 14,
+        "c": {
+          "samples": 1488,
+          "p50_ns": 447059,
+          "p99_ns": 704452,
+          "min_ns": 414331,
+          "max_ns": 733322,
+          "p50_mb_per_s": 408.59,
+          "peak_rss_kib": 1888
+        },
+        "rust": {
+          "samples": 1488,
+          "p50_ns": 672631,
+          "p99_ns": 1116685,
+          "min_ns": 622084,
+          "max_ns": 1276421,
+          "p50_mb_per_s": 271.57,
+          "peak_rss_kib": 2332
+        },
+        "rust_vs_c_p50": 1.5046,
+        "rust_vs_c_p99": 1.5852,
+        "verdict": "rust slower"
+      },
+      "tagged.cbor": {
+        "bytes": 97891,
+        "reps_per_block": 1169,
+        "warmup_discarded": 116,
+        "rounds": 4,
+        "timer_overhead_ns": 15,
+        "c": {
+          "samples": 4212,
+          "p50_ns": 166485,
+          "p99_ns": 276296,
+          "min_ns": 153845,
+          "max_ns": 312587,
+          "p50_mb_per_s": 587.99,
+          "peak_rss_kib": 1820
+        },
+        "rust": {
+          "samples": 4212,
+          "p50_ns": 268328,
+          "p99_ns": 454208,
+          "min_ns": 253851,
+          "max_ns": 546015,
+          "p50_mb_per_s": 364.82,
+          "peak_rss_kib": 2232
+        },
+        "rust_vs_c_p50": 1.6117,
+        "rust_vs_c_p99": 1.6439,
+        "verdict": "rust slower"
+      }
+    },
+    "pretty": {
+      "small_ints.cbor": {
+        "bytes": 58,
+        "reps_per_block": 50000,
+        "warmup_discarded": 5000,
+        "rounds": 4,
+        "timer_overhead_ns": 15,
+        "c": {
+          "samples": 180000,
+          "p50_ns": 2696,
+          "p99_ns": 6147,
+          "min_ns": 2503,
+          "max_ns": 61932,
+          "p50_mb_per_s": 21.51,
+          "peak_rss_kib": 2172
+        },
+        "rust": {
+          "samples": 180000,
+          "p50_ns": 882,
+          "p99_ns": 2032,
+          "min_ns": 782,
+          "max_ns": 31713,
+          "p50_mb_per_s": 65.76,
+          "peak_rss_kib": 2596
+        },
+        "rust_vs_c_p50": 0.3272,
+        "rust_vs_c_p99": 0.3306,
+        "verdict": "rust faster"
+      },
+      "flat_array.cbor": {
+        "bytes": 163797,
+        "reps_per_block": 50,
+        "warmup_discarded": 5,
+        "rounds": 4,
+        "timer_overhead_ns": 17,
+        "c": {
+          "samples": 180,
+          "p50_ns": 9916169,
+          "p99_ns": 22453198,
+          "min_ns": 8014940,
+          "max_ns": 25573528,
+          "p50_mb_per_s": 16.52,
+          "peak_rss_kib": 2000
+        },
+        "rust": {
+          "samples": 180,
+          "p50_ns": 2894352,
+          "p99_ns": 6465603,
+          "min_ns": 2447648,
+          "max_ns": 7228775,
+          "p50_mb_per_s": 56.59,
+          "peak_rss_kib": 2844
+        },
+        "rust_vs_c_p50": 0.2919,
+        "rust_vs_c_p99": 0.288,
+        "verdict": "rust faster"
+      },
+      "deep_nest.cbor": {
+        "bytes": 191490,
+        "reps_per_block": 50,
+        "warmup_discarded": 5,
+        "rounds": 4,
+        "timer_overhead_ns": 14,
+        "c": {
+          "samples": 180,
+          "p50_ns": 21908687,
+          "p99_ns": 32974751,
+          "min_ns": 20440501,
+          "max_ns": 42761423,
+          "p50_mb_per_s": 8.74,
+          "peak_rss_kib": 1972
+        },
+        "rust": {
+          "samples": 180,
+          "p50_ns": 4523782,
+          "p99_ns": 6875343,
+          "min_ns": 4302553,
+          "max_ns": 7120447,
+          "p50_mb_per_s": 42.33,
+          "peak_rss_kib": 2904
+        },
+        "rust_vs_c_p50": 0.2065,
+        "rust_vs_c_p99": 0.2085,
+        "verdict": "rust faster"
+      },
+      "map_heavy.cbor": {
+        "bytes": 338938,
+        "reps_per_block": 50,
+        "warmup_discarded": 5,
+        "rounds": 4,
+        "timer_overhead_ns": 14,
+        "c": {
+          "samples": 180,
+          "p50_ns": 19679142,
+          "p99_ns": 36439890,
+          "min_ns": 18159935,
+          "max_ns": 36472125,
+          "p50_mb_per_s": 17.22,
+          "peak_rss_kib": 2176
+        },
+        "rust": {
+          "samples": 180,
+          "p50_ns": 4969279,
+          "p99_ns": 7217711,
+          "min_ns": 4685960,
+          "max_ns": 7649084,
+          "p50_mb_per_s": 68.21,
+          "peak_rss_kib": 3456
+        },
+        "rust_vs_c_p50": 0.2525,
+        "rust_vs_c_p99": 0.1981,
+        "verdict": "rust faster"
+      },
+      "text_utf8.cbor": {
+        "bytes": 563721,
+        "reps_per_block": 50,
+        "warmup_discarded": 5,
+        "rounds": 4,
+        "timer_overhead_ns": 15,
+        "c": {
+          "samples": 180,
+          "p50_ns": 15186709,
+          "p99_ns": 21618740,
+          "min_ns": 13861216,
+          "max_ns": 22643622,
+          "p50_mb_per_s": 37.12,
+          "peak_rss_kib": 2328
+        },
+        "rust": {
+          "samples": 180,
+          "p50_ns": 7282783,
+          "p99_ns": 12386682,
+          "min_ns": 6797126,
+          "max_ns": 17270302,
+          "p50_mb_per_s": 77.4,
+          "peak_rss_kib": 3916
+        },
+        "rust_vs_c_p50": 0.4795,
+        "rust_vs_c_p99": 0.573,
+        "verdict": "rust faster"
+      },
+      "bytes_heavy.cbor": {
+        "bytes": 628060,
+        "reps_per_block": 50,
+        "warmup_discarded": 5,
+        "rounds": 4,
+        "timer_overhead_ns": 16,
+        "c": {
+          "samples": 180,
+          "p50_ns": 29048669,
+          "p99_ns": 62484995,
+          "min_ns": 26139954,
+          "max_ns": 62660655,
+          "p50_mb_per_s": 21.62,
+          "peak_rss_kib": 2456
+        },
+        "rust": {
+          "samples": 180,
+          "p50_ns": 917972,
+          "p99_ns": 1838391,
+          "min_ns": 822441,
+          "max_ns": 1906300,
+          "p50_mb_per_s": 684.18,
+          "peak_rss_kib": 4116
+        },
+        "rust_vs_c_p50": 0.0316,
+        "rust_vs_c_p99": 0.0294,
+        "verdict": "rust faster"
+      },
+      "indefinite.cbor": {
+        "bytes": 182665,
+        "reps_per_block": 50,
+        "warmup_discarded": 5,
+        "rounds": 4,
+        "timer_overhead_ns": 16,
+        "c": {
+          "samples": 180,
+          "p50_ns": 9272523,
+          "p99_ns": 16794602,
+          "min_ns": 8063303,
+          "max_ns": 18827202,
+          "p50_mb_per_s": 19.7,
+          "peak_rss_kib": 1956
+        },
+        "rust": {
+          "samples": 180,
+          "p50_ns": 1644460,
+          "p99_ns": 3406268,
+          "min_ns": 1377349,
+          "max_ns": 3410902,
+          "p50_mb_per_s": 111.08,
+          "peak_rss_kib": 2808
+        },
+        "rust_vs_c_p50": 0.1773,
+        "rust_vs_c_p99": 0.2028,
+        "verdict": "rust faster"
+      },
+      "tagged.cbor": {
+        "bytes": 97891,
+        "reps_per_block": 55,
+        "warmup_discarded": 5,
+        "rounds": 4,
+        "timer_overhead_ns": 16,
+        "c": {
+          "samples": 200,
+          "p50_ns": 5907177,
+          "p99_ns": 10181807,
+          "min_ns": 5060182,
+          "max_ns": 10624945,
+          "p50_mb_per_s": 16.57,
+          "peak_rss_kib": 1876
+        },
+        "rust": {
+          "samples": 200,
+          "p50_ns": 994963,
+          "p99_ns": 1756050,
+          "min_ns": 836908,
+          "max_ns": 1788007,
+          "p50_mb_per_s": 98.39,
+          "peak_rss_kib": 2620
+        },
+        "rust_vs_c_p50": 0.1684,
+        "rust_vs_c_p99": 0.1725,
+        "verdict": "rust faster"
+      }
+    }
+  },
+  "regressions_rust_slower_at_p50": [
+    {
+      "mode": "parse",
+      "file": "map_heavy.cbor",
+      "rust_vs_c_p50": 1.8302
+    },
+    {
+      "mode": "parse",
+      "file": "text_utf8.cbor",
+      "rust_vs_c_p50": 1.7224
+    },
+    {
+      "mode": "parse",
+      "file": "tagged.cbor",
+      "rust_vs_c_p50": 1.6117
+    },
+    {
+      "mode": "parse",
+      "file": "indefinite.cbor",
+      "rust_vs_c_p50": 1.5046
+    },
+    {
+      "mode": "parse",
+      "file": "bytes_heavy.cbor",
+      "rust_vs_c_p50": 1.4928
+    },
+    {
+      "mode": "parse",
+      "file": "deep_nest.cbor",
+      "rust_vs_c_p50": 1.4915
+    },
+    {
+      "mode": "parse",
+      "file": "small_ints.cbor",
+      "rust_vs_c_p50": 1.3594
+    },
+    {
+      "mode": "parse",
+      "file": "flat_array.cbor",
+      "rust_vs_c_p50": 1.2311
+    },
+    {
+      "mode": "startup",
+      "file": "-",
+      "rust_vs_c_p50": 1.0836
+    }
+  ],
+  "notes": [
+    "rust_vs_c ratios are rust/c: >1.0 means the Rust port is SLOWER.",
+    "Percentiles are nearest-rank over pooled per-repetition samples; no outliers were removed. Only the leading warmup reps of each block are discarded, and that count is recorded per entry.",
+    "Any corpus file with output_equivalence.identical == false is NOT a fair timing comparison: the two builds emit different bytes and therefore do different amounts of work.",
+    "peak_rss_kib is /proc/self/status VmHWM, not getrusage ru_maxrss: ru_maxrss survives fork/exec on Linux and reports the harness's high-water mark, not the driver's. It includes the input file buffer.",
+    "cbor_value_to_json_advance is not benchmarked: it is unimplemented in the Rust port.",
+    "parse mode calls cbor_value_advance() on the top-level value, which walks the structure but does not read text/byte string payloads -- it only skips over them. Its p50_mb_per_s is therefore a structural traversal rate, NOT a bytes-consumed rate, and is meaningless for the string-heavy files (text_utf8, bytes_heavy). pretty mode touches every byte and its MB/s figure is real."
+  ]
+}

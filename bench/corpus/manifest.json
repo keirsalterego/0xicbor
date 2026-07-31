@@ -1,0 +1,45 @@
+{
+  "seed": 7344,
+  "files": [
+    {
+      "file": "small_ints.cbor",
+      "bytes": 58,
+      "shape": "Every integer head width in one tiny document: 0..23 inline, then the 1/2/4/8-byte forms, positive and negative, plus the simple values."
+    },
+    {
+      "file": "flat_array.cbor",
+      "bytes": 163797,
+      "shape": "One flat array of 60k integers spread across every head width. No nesting at all: this is the pure item-decode loop."
+    },
+    {
+      "file": "deep_nest.cbor",
+      "bytes": 191490,
+      "shape": "4000 independently nested chains, each 40 arrays deep with a small map at the bottom. Depth stresses the parser's container enter/leave path; the repeat count is what pushes it to a realistic size."
+    },
+    {
+      "file": "map_heavy.cbor",
+      "bytes": 338938,
+      "shape": "3000 records, each an 8-key map of short text keys, one of which nests a further 3-key map. String-keyed map lookup shape, the common config / telemetry document."
+    },
+    {
+      "file": "text_utf8.cbor",
+      "bytes": 563721,
+      "shape": "400 text strings of mixed scripts: 1-byte ASCII, 2-byte Cyrillic/Greek, 3-byte CJK and 4-byte astral (emoji, so surrogate-pair territory for any UTF-16 consumer). This is the UTF-8 validation and escaping path."
+    },
+    {
+      "file": "bytes_heavy.cbor",
+      "bytes": 628060,
+      "shape": "1200 opaque byte strings, 16 B to 2 KiB, plus a few empties. Pretty printing renders these as hex, so this is the slowest per-input-byte workload in the corpus by a wide margin."
+    },
+    {
+      "file": "indefinite.cbor",
+      "bytes": 182665,
+      "shape": "Indefinite-length everything: outer array, per-record maps, and chunked byte and text strings. Exercises the break-handling and chunk-iteration code that the definite-length files never touch."
+    },
+    {
+      "file": "tagged.cbor",
+      "bytes": 97891,
+      "shape": "Tagged values -- epoch times, bignums, decimal fractions, base64 hints -- wrapped around the types above. Tags are a separate decode path and none of the other files carry one."
+    }
+  ]
+}
