@@ -1,0 +1,9 @@
+[package]
+name = "cbordump"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Dumps CBOR files as diagnostic notation or JSON, matching intel/tinycbor's cbordump"
+
+[dependencies]
+cbor-core = { path = "../../crates/cbor-core" }

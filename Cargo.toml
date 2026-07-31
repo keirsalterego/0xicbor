@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/cbor-core", "crates/cbor-ffi"]
+members = ["crates/cbor-core", "crates/cbor-ffi", "tools/cbordump", "tools/json2cbor"]
 resolver = "2"
 
 [workspace.package]

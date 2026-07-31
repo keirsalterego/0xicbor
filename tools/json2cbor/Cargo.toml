@@ -1,0 +1,9 @@
+[package]
+name = "json2cbor"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Converts JSON to CBOR, matching intel/tinycbor's json2cbor"
+
+[dependencies]
+cbor-core = { path = "../../crates/cbor-core" }
