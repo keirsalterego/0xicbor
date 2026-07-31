@@ -1,6 +1,6 @@
 <div align="center">
 
-# 0xicbor
+<img src="assets/banner.png" alt="0xicbor — intel/tinycbor, C to Rust" width="820">
 
 ### Concise Binary Object Representation (CBOR) Library
 
@@ -38,10 +38,10 @@ not a target.
 
 | | |
 |---|---|
-| **Original suite** | **21 passed, 4,908 failed** of 4,929 reachable rows |
+| **Original suite** | **1,908 passed, 3,021 failed** of 4,929 reachable rows |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **`unsafe` blocks** | **0** |
+| **`unsafe` blocks** | **46** |
 | **Differential fuzz** | not yet run |
 
 The 21 passing rows pass by coincidence: every entry point is currently a stub returning
