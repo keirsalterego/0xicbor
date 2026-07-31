@@ -1,0 +1,25 @@
+== differential fuzz: pretty printer vs upstream C oracle, 60s ==
+   Compiling cbor-core v0.1.0 (/home/keir/0xicbor/crates/cbor-core)
+   Compiling cbor-ffi v0.1.0 (/home/keir/0xicbor/crates/cbor-ffi)
+   Compiling cbor-fuzz v0.0.0 (/home/keir/0xicbor/fuzz)
+    Finished `release` profile [optimized + debuginfo] target(s) in 2.93s
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.05s
+     Running `target/x86_64-unknown-linux-gnu/release/pretty_diff -artifact_prefix=/home/keir/0xicbor/fuzz/artifacts/pretty_diff/ -max_total_time=60 -print_final_stats=1 -fork=1 -ignore_crashes=1 /home/keir/0xicbor/fuzz/corpus/pretty_diff`
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 3716245039
+INFO: Loaded 1 modules   (3005 inline 8-bit counters): 3005 [0x55b78cfc2ff0, 0x55b78cfc3bad), 
+INFO: Loaded 1 PC tables (3005 PCs): 3005 [0x55b78cfc3bb0,0x55b78cfcf780), 
+INFO: -fork=1: fuzzing in separate process(s)
+INFO: -fork=1: 390 seed inputs, starting to fuzz in /tmp/libFuzzerTemp.FuzzWithFork415546.dir
+#2398: cov: 668 ft: 2222 corp: 390 exec/s: 1199 oom/timeout/crash: 0/0/0 time: 2s job: 1 dft_time: 0
+#6694: cov: 668 ft: 2223 corp: 391 exec/s: 1432 oom/timeout/crash: 0/0/0 time: 5s job: 2 dft_time: 0
+#13116: cov: 668 ft: 2232 corp: 395 exec/s: 1605 oom/timeout/crash: 0/0/0 time: 10s job: 3 dft_time: 0
+#19471: cov: 670 ft: 2245 corp: 403 exec/s: 1271 oom/timeout/crash: 0/0/0 time: 15s job: 4 dft_time: 0
+#28236: cov: 672 ft: 2255 corp: 408 exec/s: 1460 oom/timeout/crash: 0/0/0 time: 21s job: 5 dft_time: 0
+#41122: cov: 672 ft: 2266 corp: 413 exec/s: 1840 oom/timeout/crash: 0/0/0 time: 28s job: 6 dft_time: 0
+#57091: cov: 674 ft: 2301 corp: 423 exec/s: 1996 oom/timeout/crash: 0/0/0 time: 36s job: 7 dft_time: 0
+#71105: cov: 674 ft: 2321 corp: 438 exec/s: 1557 oom/timeout/crash: 0/0/0 time: 45s job: 8 dft_time: 0
+#83785: cov: 674 ft: 2336 corp: 445 exec/s: 1268 oom/timeout/crash: 0/0/0 time: 55s job: 9 dft_time: 0
+#103703: cov: 674 ft: 2342 corp: 448 exec/s: 1810 oom/timeout/crash: 0/0/0 time: 66s job: 10 dft_time: 0
+INFO: fuzzed for 66 seconds, wrapping up soon
+INFO: exiting: 0 time: 66s

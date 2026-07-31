@@ -1,0 +1,29 @@
+# Its own workspace root on purpose: the fuzzer must never become a member of
+# the shipped workspace, and this keeps the root Cargo.toml untouched.
+[workspace]
+
+[package]
+name = "cbor-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# rlib, so the target links the same #[no_mangle] C entry points that end up in
+# libtinycbor.a. No C is pulled in by this dependency; the reference C lives in
+# a separate executable, oracle/cbor-oracle.
+cbor-ffi = { path = "../crates/cbor-ffi" }
+
+[[bin]]
+name = "pretty_diff"
+path = "fuzz_targets/pretty_diff.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1

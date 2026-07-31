@@ -1,0 +1,4 @@
+# target/, artifacts/, corpus/ and Cargo.lock are already covered by the root
+# .gitignore. These two are not.
+oracle/cbor-oracle
+coverage/
