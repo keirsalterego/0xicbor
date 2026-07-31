@@ -1,0 +1,13 @@
+[package]
+name = "cbor-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "C ABI shim exposing cbor-core as a drop-in libtinycbor.a"
+
+[lib]
+name = "tinycbor"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+cbor-core = { path = "../cbor-core" }
