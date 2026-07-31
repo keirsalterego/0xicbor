@@ -165,8 +165,10 @@ fn strerror(e: &io::Error) -> String {
 ///
 /// No option here takes an argument, so what is left is bundling (`-cj`), `--`
 /// ending the scan, the diagnostic glibc writes for an unknown letter, and
-/// GNU's permutation — operands may appear before or between options and still
-/// come out at the end.
+/// where the scan stops. cbordump.c defines `_POSIX_C_SOURCE` and not
+/// `_GNU_SOURCE`, which binds `getopt` to glibc's `__posix_getopt`: it does
+/// *not* permute, so the first operand ends the options and `cbordump f -j`
+/// looks for a file called "-j".
 struct Getopt<'a> {
     argv: &'a [String],
     spec: &'a str,
@@ -212,9 +214,11 @@ impl<'a> Getopt<'a> {
             let arg = self.argv.get(self.at)?.as_str();
             // A lone "-" is an operand, not an empty bundle.
             if self.ended || arg == "-" || !arg.starts_with('-') {
-                self.operands.push(arg);
-                self.at += 1;
-                continue;
+                // The scan stops here: whatever follows is an operand too.
+                self.operands
+                    .extend(self.argv[self.at..].iter().map(String::as_str));
+                self.at = self.argv.len();
+                return None;
             }
             if arg == "--" {
                 self.ended = true;

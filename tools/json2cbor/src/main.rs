@@ -124,13 +124,16 @@ fn strerror(e: &io::Error) -> String {
     }
 }
 
-/// `getopt(3)` as glibc implements it, cut down to what this tool needs: no
-/// option takes an argument, so what is left is bundling, `--` ending the
-/// scan, the diagnostic glibc writes for an unknown letter, and GNU's
-/// permutation of operands to the end.
+/// `getopt(3)` as glibc implements it, cut down to what this tool needs.
 ///
-/// A copy of cbordump's. Two forty-line scanners in two binaries beat a third
-/// crate in the workspace to hold one of them.
+/// No option takes an argument, so what is left is bundling, `--` ending the
+/// scan, the diagnostic glibc writes for an unknown letter, and where the scan
+/// stops. json2cbor.c defines `_GNU_SOURCE`, so this is the GNU getopt, which
+/// moves operands to the end and keeps looking for options past them — unless
+/// POSIXLY_CORRECT is set, which turns that off.
+///
+/// A near-copy of cbordump's, which gets the POSIX variant instead. Two
+/// forty-line scanners in two binaries beat a third crate to hold one of them.
 struct Getopt<'a> {
     argv: &'a [String],
     spec: &'a str,
@@ -138,6 +141,8 @@ struct Getopt<'a> {
     inside: usize,
     operands: Vec<&'a str>,
     ended: bool,
+    /// GNU getopt permutes; POSIXLY_CORRECT makes it stop at the first operand.
+    permute: bool,
 }
 
 impl<'a> Getopt<'a> {
@@ -149,6 +154,7 @@ impl<'a> Getopt<'a> {
             inside: 0,
             operands: Vec::new(),
             ended: false,
+            permute: std::env::var_os("POSIXLY_CORRECT").is_none(),
         }
     }
 
@@ -173,6 +179,13 @@ impl<'a> Getopt<'a> {
             let arg = self.argv.get(self.at)?.as_str();
             // A lone "-" is an operand, not an empty bundle.
             if self.ended || arg == "-" || !arg.starts_with('-') {
+                if !self.permute {
+                    // Whatever follows the first operand is an operand too.
+                    self.operands
+                        .extend(self.argv[self.at..].iter().map(String::as_str));
+                    self.at = self.argv.len();
+                    return None;
+                }
                 self.operands.push(arg);
                 self.at += 1;
                 continue;
