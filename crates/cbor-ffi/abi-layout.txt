@@ -1,0 +1,30 @@
+# C ABI layout of tinycbor public structs, x86_64-unknown-linux-gnu
+# upstream 9441b2ca882f95849c93de03f2c754196db13154
+# generated at kickoff by a throwaway C program; asserted in crates/cbor-ffi tests
+
+sizeof CborEncoder  = 32
+alignof CborEncoder = 8
+offsetof CborEncoder  . data         = 0
+offsetof CborEncoder  . end          = 8
+offsetof CborEncoder  . remaining    = 16
+offsetof CborEncoder  . flags        = 24
+
+sizeof CborParser   = 16
+alignof CborParser  = 8
+offsetof CborParser   . source       = 0
+offsetof CborParser   . flags        = 8
+
+sizeof CborValue    = 24
+alignof CborValue   = 8
+offsetof CborValue    . parser       = 0
+offsetof CborValue    . source       = 8
+offsetof CborValue    . remaining    = 16
+offsetof CborValue    . extra        = 20
+offsetof CborValue    . type         = 22
+offsetof CborValue    . flags        = 23
+
+sizeof size_t        = 8
+sizeof ptrdiff_t     = 8
+sizeof int           = 4
+sizeof enum CborType = 4
+sizeof CborError     = 4
