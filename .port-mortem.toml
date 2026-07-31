@@ -1,6 +1,36 @@
-track        = "A"
-source_repo  = "https://github.com/intel/tinycbor"
+track         = "A"
+source_repo   = "https://github.com/intel/tinycbor"
 source_commit = "9441b2ca882f95849c93de03f2c754196db13154"
-source_lang  = "C"
-target_lang  = "Rust"
-kickoff_hash = "ee5617f3372ebd32f4540001c21cea76fa46610b43197589c8a4a57b4b685aed"
+source_lang   = "C"
+target_lang   = "Rust"
+kickoff_hash  = "ee5617f3372ebd32f4540001c21cea76fa46610b43197589c8a4a57b4b685aed"
+
+repo          = "https://github.com/keirsalterego/0xicbor"
+docs          = "https://keirsalterego.github.io/0xicbor/"
+phase         = "port"
+
+# Upstream source measured at kickoff: 6456 lines across src/, under the 8k cap.
+source_lines  = 6456
+
+[suite]
+# Upstream's own build reports 4931 rows. tst_cpp accounts for 2 of them and
+# cannot pass by construction: it #includes upstream's .c files directly.
+# See decisions.md entry 2.
+upstream_rows = 4931
+reachable     = 4929
+passing       = 21
+failing       = 4908
+
+[parity]
+# nm -g --defined-only, sorted, diffed against bench/reference/symbols-upstream.txt
+symbols_upstream = 44
+symbols_ours     = 44
+symbol_diff      = 0
+abi_layout       = "asserted"
+
+[budget]
+# grep -rn "unsafe" crates/ | wc -l — published honestly as it grows.
+unsafe_blocks = 0
+fuzz_seconds  = 0
+divergences   = 0
+decisions     = 11

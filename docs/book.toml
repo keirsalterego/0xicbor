@@ -1,0 +1,22 @@
+[book]
+title = "0xicbor"
+description = "Porting intel/tinycbor from C to Rust without touching its test suite"
+authors = ["keirsalterego"]
+language = "en"
+src = "src"
+
+[output.html]
+site-url = "/0xicbor/"
+git-repository-url = "https://github.com/keirsalterego/0xicbor"
+edit-url-template = "https://github.com/keirsalterego/0xicbor/edit/main/docs/{path}"
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+no-section-label = false
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 20
