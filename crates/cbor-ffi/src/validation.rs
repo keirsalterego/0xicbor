@@ -188,7 +188,12 @@ fn validate_number(it: &CborValue, type_: u8, flags: u32) -> c_int {
         return parser::ERR_UNEXPECTED_EOF;
     };
     let used = parser::bytes_needed(head & 0x1f);
-    let value = parser::extract_int64(it);
+    // Fresh from the cursor, not from `extra`: when validating the chunks of an
+    // indefinite-length string the cursor is on a chunk head that was never
+    // preparsed, so the cached value belongs to the enclosing string.
+    let Some(value) = parser::number_at_cursor(it) else {
+        return parser::ERR_UNEXPECTED_EOF;
+    };
 
     let mut needed = 0usize;
     if value >= VALUE_8BIT as u64 {

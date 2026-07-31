@@ -60,7 +60,12 @@ fn indicator(it: &CborValue, flags: c_int) -> &'static str {
         return "";
     }
 
-    let value = parser::extract_int64(it);
+    // Read the number at the cursor rather than trusting the cached `extra`:
+    // during chunk iteration the cursor is on a chunk head that was never
+    // preparsed, and `extra` still describes the enclosing string.
+    let Some(value) = parser::number_at_cursor(it) else {
+        return "";
+    };
     // The shortest additional-info that could have carried this value.
     let mut expected = VALUE_8BIT - 1;
     if value >= VALUE_8BIT as u64 {

@@ -207,6 +207,29 @@ pub(crate) fn is_container(t: u8) -> bool {
     t == TYPE_ARRAY || t == TYPE_MAP
 }
 
+/// Decodes the number in the head byte at the cursor, reading it fresh from the
+/// source rather than from `extra`.
+///
+/// The cached fields describe whatever was last preparsed. During string-chunk
+/// iteration the cursor sits on a chunk head that was never preparsed, so the
+/// cached value belongs to the enclosing string and is the wrong answer.
+pub(crate) fn number_at_cursor(it: &CborValue) -> Option<u64> {
+    let head = read_byte(it)?;
+    let descriptor = head & SMALL_VALUE_MASK;
+    if descriptor < VALUE_8BIT {
+        return Some(descriptor as u64);
+    }
+    if descriptor > VALUE_64BIT {
+        return None;
+    }
+    let need = bytes_needed(descriptor);
+    if !can_read(it, 1 + need) {
+        return None;
+    }
+    // SAFETY: bounds checked immediately above.
+    Some(unsafe { read_unchecked(it, 1, need) })
+}
+
 /// The value carried in the head, reading past `extra` when it did not fit.
 pub(crate) fn extract_int64(it: &CborValue) -> u64 {
     if it.flags & F_TOO_LARGE != 0 {
