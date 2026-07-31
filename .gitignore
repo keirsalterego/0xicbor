@@ -1,14 +1,8 @@
-CLAUDE.md
-AGENTS.md
-.claude/
-.cursor/
-.aider*
-*.local.md
-scratch/
-
 target/
 build/
 Cargo.lock
 fuzz/target/
 fuzz/artifacts/
 fuzz/corpus/
+scratch/
+*.local.md
