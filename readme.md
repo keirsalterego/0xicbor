@@ -10,7 +10,8 @@ linkable as a drop-in `libtinycbor.a`.**
 The original Qt test suite runs against it unmodified.
 
 [Documentation](https://keirsalterego.github.io/0xicbor/) ·
-[Decisions](decisions.md)
+[Decisions](decisions.md) ·
+[Benchmarks](bench/methodology.md)
 
 </div>
 
@@ -38,19 +39,30 @@ not a target.
 
 | | |
 |---|---|
-| **Original suite** | **2,732 passed, 2,197 failed** of 4,929 reachable rows |
+| **Original suite** | **4,929 / 4,929 — zero failures** |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **`unsafe` blocks** | **46** |
-| **Differential fuzz** | not yet run |
+| **Differential fuzz** | **103,703 execs, 60s, zero divergences** |
+| **`unsafe` blocks** | **74**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
+| **Dependencies** | **zero** |
+| **Parsing speed** | **1.48x slower than C** (mean p50 over 8 corpus files) |
 
-`tst_encoder` passes outright, 1596 of 1596. The parser and the diagnostic printer work.
-The JSON converter is not written yet, and that accounts for nearly all the remaining red.
-Each module that lands moves the number; the log of it lives in [decisions.md](decisions.md).
+Every test in Intel's suite that can apply to a port passes. `tst_cpp` is the exception and
+always was: it `#include`s upstream's `.c` files directly, so it tests C sources a Rust port
+does not have. That is 2 rows, which is why the total is 4,929 and not 4,931, and it has its
+own entry in [decisions.md](decisions.md) rather than being quietly dropped.
 
-For scale on the `unsafe` count: uv ships 73 `unsafe` blocks, Bun ships 13,044. The budget
-here is whatever `cbor-ffi` genuinely needs to dereference caller-supplied pointers, and it
-gets published as it grows.
+**The port is slower at parsing than the C it replaces** — 1.18x to 1.83x across the corpus,
+mean 1.48x, with p99 tracking p50 so it is systematic rather than tail noise. Peak RSS runs
+11-68% higher and the static archive is far larger. It wins pretty-printing by 2x to 32x,
+but that is upstream calling `vfprintf` once per byte in `hexDump`, not decode speed, so it
+is not a headline worth claiming. Full numbers and method in
+[bench/methodology.md](bench/methodology.md).
+
+For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 74
+here is in `cbor-ffi` dereferencing a pointer a C caller handed us, and each carries a
+`// SAFETY:` line naming the invariant. `cbor-core` — the entire CBOR implementation — is
+`#![forbid(unsafe_code)]` and contains none.
 
 ## How it fits together
 

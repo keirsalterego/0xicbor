@@ -18,8 +18,8 @@ source_lines  = 6456
 # See decisions.md entry 2.
 upstream_rows = 4931
 reachable     = 4929
-passing       = 2732
-failing       = 2197
+passing       = 4929
+failing       = 0
 
 [parity]
 # nm -g --defined-only, sorted, diffed against bench/reference/symbols-upstream.txt
@@ -30,7 +30,7 @@ abi_layout       = "asserted"
 
 [budget]
 # grep -rn "unsafe {" crates/ --include='*.rs' | wc -l — blocks, not mentions.
-unsafe_blocks = 46
-fuzz_seconds  = 0
+unsafe_blocks = 74
+fuzz_seconds  = 60
 divergences   = 0
-decisions     = 11
+decisions     = 12

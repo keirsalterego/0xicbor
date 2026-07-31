@@ -34,15 +34,18 @@ These are the real numbers from `make test`, not a target.
 
 | | |
 |---|---|
-| Original suite | **2,732 passed, 2,197 failed** of 4,929 reachable rows |
+| Original suite | **4,929 / 4,929 — zero failures** |
 | Symbol parity | **44 / 44**, zero `nm` diff against upstream |
 | ABI layout | asserted against C-dumped offsets, passing |
-| `unsafe` blocks | **46** |
-| Differential fuzz | not yet run |
+| `unsafe` blocks | **74**, all in the shim |
+| Differential fuzz | **103,703 execs, zero divergences** |
+| Parse speed | **1.48x slower than C** |
 
-The port is in progress. The encoder passes its suite outright; the parser and the
-diagnostic printer work. The JSON converter is not written yet, which is nearly all of the
-remaining red. The failure count is the progress bar.
+Every row that can apply to a port passes. The two that cannot are `tst_cpp`, which
+`#include`s upstream's `.c` files and therefore tests C sources this port does not have.
+
+Parsing is slower than the C it replaces, and that is published as prominently as the pass
+rate — see the [scoreboard](verification/scoreboard.md).
 
 ## Where to start
 

@@ -6,17 +6,15 @@ Real output, updated as the port moves. Nothing here is a target.
 
 | Binary | Passed | Failed | Notes |
 |---|---:|---:|---|
-| `tst_encoder` | 1,596 | 0 | complete |
-| `tst_parser` | 1,134 | 1,372 | |
-| `tst_tojson` | 2 | 825 | |
+| `tst_encoder` | 1,596 | 0 | |
+| `tst_parser` | 2,506 | 0 | |
+| `tst_tojson` | 827 | 0 | |
 | `tst_c90` | 1 | 0 | header compiles under `-std=c90 -pedantic` |
 | `tst_cpp` | — | — | inapplicable, see [decision 2](../reference/decisions.md) |
-| **Total** | **2,732** | **2,197** | of 4,929 reachable |
+| **Total** | **4,929** | **0** | of 4,929 reachable |
 
-The encoder is complete. The parser navigates correctly and the diagnostic printer works,
-which is what moved `tst_parser` from 17 to 1,134. What is still stubbed is `cbor_error_string`,
-`cbor_value_validate`'s strict modes, `_cbor_value_dup_string`, and the whole JSON converter —
-which is why `tst_tojson` has barely moved.
+Everything that can pass, passes. `_cbor_value_dup_string` is the one entry point still
+stubbed; nothing in the suite exercises it.
 
 ## ABI
 
@@ -31,17 +29,20 @@ which is why `tst_tojson` has barely moved.
 
 | | |
 |---|---|
-| `unsafe` blocks | 46 |
+| Parse speed vs C | **1.48x slower** (mean p50, 8 files) |
+| Pretty-print vs C | 2x–32x faster, but see [methodology](../../bench/methodology.md) |
+| `unsafe` blocks | 74 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
-| Differential fuzz | not yet run |
-| Decision log entries | 11 |
+| Differential fuzz | 103,703 execs / 60s, **zero divergences** |
+| Decision log entries | 12 |
 
 ## Reading this honestly
 
-A 2,732/4,929 pass rate is a library that encodes correctly and parses correctly, with its
-JSON half not yet written. The value of publishing it is that the number has a known ceiling,
-the measurement is one command, and every subsequent claim is a delta against a figure that
-was already public.
+4,929/4,929 is every row that can apply to a port. It is not 4,931 because two rows test that
+upstream's C compiles as C++, which a Rust port cannot satisfy by construction.
+
+The number that matters more is the one below it: parsing is **1.48x slower than the C**. A
+100% pass rate and an honest regression is a more useful artifact than either alone.
 
 If the port ends below 100%, the failing tests stay failing and each gets a paragraph in the
 [decision log](../reference/decisions.md). A reproducible 94% is worth more than a 100% that
