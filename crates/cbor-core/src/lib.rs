@@ -14,6 +14,8 @@
 
 extern crate alloc;
 
+pub mod encoder;
 mod error;
+pub mod half;
 
 pub use error::{CborError, CborResult};

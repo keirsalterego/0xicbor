@@ -15,6 +15,7 @@
 // panic handler without hand-rolling either. The portability claim belongs to
 // cbor-core, which is where it actually buys something.
 
+mod encoder;
 mod types;
 
 pub use types::{CborEncoder, CborParser, CborValue};
@@ -42,44 +43,6 @@ macro_rules! stub {
             STUB
         }
     )*};
-}
-
-// -- encoder ---------------------------------------------------------------
-
-/// Upstream returns `void` here, so there is no way to signal "not implemented".
-/// Leaving the encoder untouched is the least surprising stub behaviour.
-#[no_mangle]
-pub extern "C" fn cbor_encoder_init(
-    _encoder: *mut CborEncoder,
-    _buffer: *mut u8,
-    _size: usize,
-    _flags: c_int,
-) {
-}
-
-#[no_mangle]
-pub extern "C" fn cbor_encoder_init_writer(
-    _encoder: *mut CborEncoder,
-    _writer: *mut c_void,
-    _token: *mut c_void,
-) {
-}
-
-stub! {
-    cbor_encode_uint(encoder: *mut CborEncoder, value: u64);
-    cbor_encode_int(encoder: *mut CborEncoder, value: i64);
-    cbor_encode_negative_int(encoder: *mut CborEncoder, absolute_value: u64);
-    cbor_encode_simple_value(encoder: *mut CborEncoder, value: u8);
-    cbor_encode_tag(encoder: *mut CborEncoder, tag: u64);
-    cbor_encode_text_string(encoder: *mut CborEncoder, string: *const c_char, length: usize);
-    cbor_encode_byte_string(encoder: *mut CborEncoder, string: *const u8, length: usize);
-    cbor_encode_raw(encoder: *mut CborEncoder, raw: *const u8, length: usize);
-    cbor_encode_floating_point(encoder: *mut CborEncoder, fp_type: c_int, value: *const c_void);
-    cbor_encode_float_as_half_float(encoder: *mut CborEncoder, value: f32);
-    cbor_encoder_create_array(parent: *mut CborEncoder, array: *mut CborEncoder, length: usize);
-    cbor_encoder_create_map(parent: *mut CborEncoder, map: *mut CborEncoder, length: usize);
-    cbor_encoder_close_container(parent: *mut CborEncoder, container: *const CborEncoder);
-    cbor_encoder_close_container_checked(parent: *mut CborEncoder, container: *const CborEncoder);
 }
 
 // -- parser ----------------------------------------------------------------
