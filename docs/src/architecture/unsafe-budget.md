@@ -12,11 +12,16 @@
 ## Current count
 
 ```console
-$ grep -rn "unsafe" crates/ | wc -l
+$ grep -rn "unsafe {" crates/ --include='*.rs' | wc -l
 0
 ```
 
-Zero, because the shim is still stubs and nothing dereferences its arguments yet. This
+A bare `grep -rn unsafe crates/` returns 4, and all four are prose: two lines of module
+documentation, one sentence in `cbor-core`'s header, and the `#![forbid(unsafe_code)]`
+attribute itself. Counting `unsafe {` counts blocks, which is the number that means
+something.
+
+Zero, then, because the shim is still stubs and nothing dereferences its arguments yet. This
 number will grow as the port lands, and it gets published as it grows rather than at the
 end. A count that only moves in the honest direction is not worth much if nobody sees the
 intermediate values.
