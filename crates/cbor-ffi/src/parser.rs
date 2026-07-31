@@ -15,25 +15,25 @@ use crate::types::{CborParser, CborValue};
 use core::ffi::{c_char, c_int, c_void};
 
 // Head byte decomposition (RFC 8949 §3).
-const MAJOR_TYPE_MASK: u8 = 0xe0;
-const SMALL_VALUE_MASK: u8 = 0x1f;
+pub(crate) const MAJOR_TYPE_MASK: u8 = 0xe0;
+pub(crate) const SMALL_VALUE_MASK: u8 = 0x1f;
 const MAJOR_TYPE_SHIFT: u8 = 5;
-const VALUE_8BIT: u8 = 24;
-const VALUE_64BIT: u8 = 27;
-const INDEFINITE_LENGTH: u8 = 31;
+pub(crate) const VALUE_8BIT: u8 = 24;
+pub(crate) const VALUE_64BIT: u8 = 27;
+pub(crate) const INDEFINITE_LENGTH: u8 = 31;
 const BREAK_BYTE: u8 = 0xff;
 
 // CborType, which is the major type in the top bits except for major 7, where
 // the whole head byte is the type.
-const TYPE_BYTE_STRING: u8 = 0x40;
-const TYPE_TEXT_STRING: u8 = 0x60;
-const TYPE_ARRAY: u8 = 0x80;
-const TYPE_MAP: u8 = 0xa0;
-const TYPE_TAG: u8 = 0xc0;
-const TYPE_SIMPLE: u8 = 0xe0;
-const TYPE_INTEGER: u8 = 0x00;
-const TYPE_BOOLEAN: u8 = 0xf5;
-const TYPE_INVALID: u8 = 0xff;
+pub(crate) const TYPE_BYTE_STRING: u8 = 0x40;
+pub(crate) const TYPE_TEXT_STRING: u8 = 0x60;
+pub(crate) const TYPE_ARRAY: u8 = 0x80;
+pub(crate) const TYPE_MAP: u8 = 0xa0;
+pub(crate) const TYPE_TAG: u8 = 0xc0;
+pub(crate) const TYPE_SIMPLE: u8 = 0xe0;
+pub(crate) const TYPE_INTEGER: u8 = 0x00;
+pub(crate) const TYPE_BOOLEAN: u8 = 0xf5;
+pub(crate) const TYPE_INVALID: u8 = 0xff;
 
 // Major type numbers, after shifting.
 const MAJOR_NEGATIVE: u8 = 1;
@@ -48,21 +48,25 @@ const DOUBLE_PRECISION_FLOAT: u8 = 27;
 // CborIteratorFlags.
 const F_IS_64BIT: u8 = 0x01;
 const F_TOO_LARGE: u8 = 0x02;
-const F_NEGATIVE: u8 = 0x04;
-const F_UNKNOWN_LENGTH: u8 = 0x10;
+pub(crate) const F_NEGATIVE: u8 = 0x04;
+/// Shares 0x04 with F_NEGATIVE: one is only meaningful on integers, the other
+/// only during string-chunk iteration, so upstream reuses the bit.
+const F_BEFORE_FIRST_CHUNK: u8 = 0x04;
+const F_ITERATING_CHUNKS: u8 = 0x08;
+pub(crate) const F_UNKNOWN_LENGTH: u8 = 0x10;
 const F_CONTAINER_IS_MAP: u8 = 0x20;
 const F_NEXT_IS_MAP_KEY: u8 = 0x40;
 
-const NO_ERROR: c_int = 0;
-const ERR_UNKNOWN_LENGTH: c_int = 2;
+pub(crate) const NO_ERROR: c_int = 0;
 const ERR_ADVANCE_PAST_EOF: c_int = 3;
-const ERR_UNEXPECTED_EOF: c_int = 257;
+pub(crate) const ERR_UNEXPECTED_EOF: c_int = 257;
 const ERR_UNEXPECTED_BREAK: c_int = 258;
 const ERR_UNKNOWN_TYPE: c_int = 259;
 const ERR_ILLEGAL_NUMBER: c_int = 261;
 const ERR_ILLEGAL_SIMPLE_TYPE: c_int = 262;
 const ERR_DATA_TOO_LARGE: c_int = 1024;
-const ERR_NESTING_TOO_DEEP: c_int = 1025;
+pub(crate) const ERR_NESTING_TOO_DEEP: c_int = 1025;
+pub(crate) const ERR_NO_MORE_STRING_CHUNKS: c_int = 263;
 
 /// Upstream's `CBOR_PARSER_MAX_RECURSIONS`.
 const MAX_RECURSIONS: i32 = 1024;
@@ -105,7 +109,7 @@ unsafe fn read_unchecked(it: &CborValue, offset: usize, len: usize) -> u64 {
     v
 }
 
-fn read_byte(it: &CborValue) -> Option<u8> {
+pub(crate) fn read_byte(it: &CborValue) -> Option<u8> {
     if can_read(it, 1) {
         // SAFETY: just bounds-checked.
         Some(unsafe { *ptr(it) })
@@ -119,7 +123,7 @@ fn advance_bytes(it: &mut CborValue, n: usize) {
 }
 
 /// How many extra length bytes follow a head with this additional-info value.
-fn bytes_needed(descriptor: u8) -> usize {
+pub(crate) fn bytes_needed(descriptor: u8) -> usize {
     if descriptor < VALUE_8BIT {
         0
     } else {
@@ -134,12 +138,12 @@ fn is_fixed_type(t: u8) -> bool {
     )
 }
 
-fn is_container(t: u8) -> bool {
+pub(crate) fn is_container(t: u8) -> bool {
     t == TYPE_ARRAY || t == TYPE_MAP
 }
 
 /// The value carried in the head, reading past `extra` when it did not fit.
-fn extract_int64(it: &CborValue) -> u64 {
+pub(crate) fn extract_int64(it: &CborValue) -> u64 {
     if it.flags & F_TOO_LARGE != 0 {
         decode_int64_internal(it)
     } else {
@@ -147,7 +151,7 @@ fn extract_int64(it: &CborValue) -> u64 {
     }
 }
 
-fn decode_int64_internal(it: &CborValue) -> u64 {
+pub(crate) fn decode_int64_internal(it: &CborValue) -> u64 {
     // SAFETY: preparse only sets these flags after checking the bytes are there.
     unsafe {
         if it.flags & F_IS_64BIT != 0 {
@@ -474,7 +478,7 @@ pub extern "C" fn cbor_value_validate_basic(it: *const CborValue) -> c_int {
     cbor_value_advance(&mut copy)
 }
 
-fn clone(it: &CborValue) -> CborValue {
+pub(crate) fn clone(it: &CborValue) -> CborValue {
     CborValue {
         parser: it.parser,
         source: it.source,
@@ -794,31 +798,120 @@ pub extern "C" fn cbor_value_map_find_value(
     }
 }
 
-/// String-chunk iteration, used by the public chunk API. Not implemented yet.
-#[no_mangle]
-pub extern "C" fn _cbor_value_begin_string_iteration(_value: *mut CborValue) -> c_int {
-    ERR_UNKNOWN_LENGTH
+// -- string chunk iteration ------------------------------------------------
+//
+// A definite-length string is one chunk; an indefinite-length one is a run of
+// definite chunks ending in a break. The caller drives both the same way:
+// begin, then get_chunk until NoMoreStringChunks, then finish. The state lives
+// in two flag bits rather than anywhere else, which is what keeps CborValue at
+// 24 bytes.
+
+fn length_known(it: &CborValue) -> bool {
+    it.flags & F_UNKNOWN_LENGTH == 0
 }
 
 #[no_mangle]
-pub extern "C" fn _cbor_value_finish_string_iteration(_value: *mut CborValue) -> c_int {
-    ERR_UNKNOWN_LENGTH
+pub extern "C" fn _cbor_value_begin_string_iteration(value: *mut CborValue) -> c_int {
+    // SAFETY: module contract.
+    let it = unsafe { as_mut(value) };
+    it.flags |= F_ITERATING_CHUNKS | F_BEFORE_FIRST_CHUNK;
+    if !length_known(it) {
+        advance_bytes(it, 1); // step over the indefinite head onto chunk one
+    }
+    NO_ERROR
+}
+
+#[no_mangle]
+pub extern "C" fn _cbor_value_finish_string_iteration(value: *mut CborValue) -> c_int {
+    // SAFETY: module contract.
+    let it = unsafe { as_mut(value) };
+    if !length_known(it) {
+        advance_bytes(it, 1); // consume the break
+    }
+    preparse_next_value(it)
+}
+
+/// Size of the chunk at the cursor, plus how far past the cursor its bytes
+/// start. Returns `NoMoreStringChunks` at the end, which is the loop condition
+/// rather than an error.
+fn chunk_size(it: &CborValue) -> Result<(usize, usize), c_int> {
+    if length_known(it) && it.flags & F_BEFORE_FIRST_CHUNK == 0 {
+        return Err(ERR_NO_MORE_STRING_CHUNKS);
+    }
+    let Some(descriptor) = read_byte(it) else {
+        return Err(ERR_UNEXPECTED_EOF);
+    };
+    if descriptor == BREAK_BYTE {
+        return Err(ERR_NO_MORE_STRING_CHUNKS);
+    }
+    if descriptor & MAJOR_TYPE_MASK != it.type_ {
+        return Err(ERR_ILLEGAL_TYPE);
+    }
+
+    let descriptor = descriptor & SMALL_VALUE_MASK;
+    if descriptor < VALUE_8BIT {
+        return Ok((1, descriptor as usize));
+    }
+    if descriptor > VALUE_64BIT {
+        return Err(ERR_ILLEGAL_NUMBER);
+    }
+    let need = bytes_needed(descriptor);
+    if !can_read(it, 1 + need) {
+        return Err(ERR_UNEXPECTED_EOF);
+    }
+    // SAFETY: bounds checked immediately above.
+    let val = unsafe { read_unchecked(it, 1, need) };
+    let len = val as usize;
+    if len as u64 != val {
+        return Err(ERR_DATA_TOO_LARGE);
+    }
+    Ok((1 + need, len))
 }
 
 #[no_mangle]
 pub extern "C" fn _cbor_value_get_string_chunk_size(
-    _value: *const CborValue,
-    _len: *mut usize,
+    value: *const CborValue,
+    len: *mut usize,
 ) -> c_int {
-    ERR_UNKNOWN_LENGTH
+    // SAFETY: module contract, plus a writable `len`.
+    unsafe {
+        match chunk_size(as_ref(value)) {
+            Ok((_, n)) => {
+                *len = n;
+                NO_ERROR
+            }
+            Err(e) => e,
+        }
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn _cbor_value_get_string_chunk(
-    _value: *const CborValue,
-    _bufferptr: *mut *const c_void,
-    _len: *mut usize,
-    _next: *mut CborValue,
+    value: *const CborValue,
+    bufferptr: *mut *const c_void,
+    len: *mut usize,
+    next: *mut CborValue,
 ) -> c_int {
-    ERR_UNKNOWN_LENGTH
+    // SAFETY: module contract. `next` routinely aliases `value` — callers pass
+    // the same cursor for both — so the read happens before anything is written.
+    unsafe {
+        let it = as_ref(value);
+        let (offset, n) = match chunk_size(it) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let mut cursor = clone(it);
+        advance_bytes(&mut cursor, offset);
+        if !can_read(&cursor, n) {
+            return ERR_UNEXPECTED_EOF;
+        }
+        *bufferptr = ptr(&cursor) as *const c_void;
+        *len = n;
+
+        let out = as_mut(next);
+        *out = cursor;
+        advance_bytes(out, n);
+        out.flags &= !F_BEFORE_FIRST_CHUNK;
+        NO_ERROR
+    }
 }

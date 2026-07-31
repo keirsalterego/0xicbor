@@ -12,6 +12,7 @@
 
 mod encoder;
 mod parser;
+mod pretty;
 mod types;
 
 pub use types::{CborEncoder, CborParser, CborValue};
@@ -53,9 +54,6 @@ stub! {
     // that parser::cbor_value_validate_basic already performs.
     cbor_value_validate(it: *const CborValue, flags: u32);
 
-    cbor_value_to_pretty_advance(out: *mut c_void, value: *mut CborValue);
-    cbor_value_to_pretty_advance_flags(out: *mut c_void, value: *mut CborValue, flags: c_int);
-    cbor_value_to_pretty_stream(stream: *mut c_void, token: *mut c_void, value: *mut CborValue, flags: c_int);
     cbor_value_to_json_advance(out: *mut c_void, value: *mut CborValue, flags: c_int);
 }
 
