@@ -289,13 +289,18 @@ fn string_to_pretty(out: &mut String, it: *mut CborValue, type_: u8, flags: c_in
         out.push_str(open);
     }
 
-    let mut trailing = "";
+    // Option, not "", because "" is a perfectly good computed indicator. C uses a
+    // NULL pointer for "not computed yet" and an empty string for "computed, and
+    // there is none"; collapsing those two recomputes on the second pass, by
+    // which point the cursor has moved onto the next value and the indicator
+    // belongs to something else entirely.
+    let mut trailing: Option<&'static str> = None;
     crate::parser::_cbor_value_begin_string_iteration(it);
     let mut separator = "";
     loop {
-        // The indicator is read before the chunk is consumed.
-        if showing_fragments || trailing.is_empty() {
-            trailing = indicator(unsafe { &*it }, flags);
+        // Read before the chunk is consumed — afterwards the cursor has moved.
+        if showing_fragments || trailing.is_none() {
+            trailing = Some(indicator(unsafe { &*it }, flags));
         }
 
         let mut ptr: *const c_void = core::ptr::null();
@@ -330,7 +335,7 @@ fn string_to_pretty(out: &mut String, it: *mut CborValue, type_: u8, flags: c_in
         }
         if showing_fragments {
             out.push(close);
-            out.push_str(trailing);
+            out.push_str(trailing.unwrap_or(""));
             separator = ", ";
         }
     }
@@ -339,7 +344,7 @@ fn string_to_pretty(out: &mut String, it: *mut CborValue, type_: u8, flags: c_in
         out.push(')');
     } else {
         out.push(close);
-        out.push_str(trailing);
+        out.push_str(trailing.unwrap_or(""));
     }
     NO_ERROR
 }
