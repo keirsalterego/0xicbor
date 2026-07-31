@@ -24,7 +24,7 @@ const INDICATE_INDETERMINATE_LENGTH: c_int = 0x02;
 const INDICATE_OVERLONG_NUMBERS: c_int = 0x04;
 const NUMERIC_ENCODING_INDICATORS: c_int = 0x01;
 const SHOW_STRING_FRAGMENTS: c_int = 0x100;
-const DEFAULT_FLAGS: c_int = INDICATE_INDETERMINATE_LENGTH;
+pub(crate) const DEFAULT_FLAGS: c_int = INDICATE_INDETERMINATE_LENGTH;
 
 const TYPE_NULL: u8 = 0xf6;
 const TYPE_UNDEFINED: u8 = 0xf7;
@@ -143,12 +143,12 @@ fn value_to_pretty(
                 match raw.checked_add(1) {
                     Some(m) => {
                         out.push('-');
-                        push_u64(out, m);
+                        push_u64_into(out, m);
                     }
                     None => out.push_str("-18446744073709551616"),
                 }
             } else {
-                push_u64(out, raw);
+                push_u64_into(out, raw);
             }
             out.push_str(indicator(v, flags));
         }
@@ -159,7 +159,7 @@ fn value_to_pretty(
 
         TYPE_TAG => {
             let tag = parser::extract_int64(v);
-            push_u64(out, tag);
+            push_u64_into(out, tag);
             out.push_str(indicator(v, flags));
             out.push('(');
             let err = crate::parser::cbor_value_advance_fixed(it);
@@ -180,7 +180,7 @@ fn value_to_pretty(
 
         TYPE_SIMPLE => {
             out.push_str("simple(");
-            push_u64(out, v.extra as u64);
+            push_u64_into(out, v.extra as u64);
             out.push(')');
         }
 
@@ -218,7 +218,7 @@ fn value_to_pretty(
                     if val < 0.0 {
                         out.push('-');
                     }
-                    push_u64(out, i);
+                    push_u64_into(out, i);
                     out.push('.');
                 }
                 None => out.push_str(&format_g(val, 17)),
@@ -344,7 +344,7 @@ fn string_to_pretty(out: &mut String, it: *mut CborValue, type_: u8, flags: c_in
     NO_ERROR
 }
 
-fn push_u64(out: &mut String, mut v: u64) {
+pub(crate) fn push_u64_into(out: &mut String, mut v: u64) {
     if v == 0 {
         out.push('0');
         return;
@@ -366,6 +366,13 @@ fn push_hex(out: &mut String, b: u8) {
 }
 
 // -- entry points ----------------------------------------------------------
+
+/// Renders exactly one value and advances past it. tojson uses this for the
+/// types whose diagnostic notation is already valid JSON, and for stringified
+/// map keys.
+pub(crate) fn render_one(out: &mut String, value: *mut CborValue, flags: c_int) -> c_int {
+    value_to_pretty(out, value, flags, MAX_RECURSIONS)
+}
 
 fn render(value: *mut CborValue, flags: c_int) -> Result<String, c_int> {
     let mut out = String::new();

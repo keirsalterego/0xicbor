@@ -13,6 +13,7 @@
 mod encoder;
 mod parser;
 mod pretty;
+mod tojson;
 mod types;
 mod validation;
 
@@ -52,7 +53,6 @@ stub! {
     _cbor_value_dup_string(value: *const CborValue, buffer: *mut *mut c_void, buflen: *mut usize, next: *mut CborValue);
 
 
-    cbor_value_to_json_advance(out: *mut c_void, value: *mut CborValue, flags: c_int);
 }
 
 /// Static storage, so the caller can hold the pointer indefinitely — which is
