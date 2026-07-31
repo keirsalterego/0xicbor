@@ -1,8 +1,10 @@
 name: docs
 
 on:
-  push:
-    branches: [main]
+  # Twice a day rather than on every push. The docs change far less often than
+  # the code, and a run per commit is mostly noise.
+  schedule:
+    - cron: "0 0,12 * * *"
   workflow_dispatch:
 
 permissions:
