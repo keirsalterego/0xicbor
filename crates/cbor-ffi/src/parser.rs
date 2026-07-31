@@ -442,10 +442,17 @@ fn advance_recursive(it: &mut CborValue, nesting: i32) -> c_int {
         // value to read and the `next` to write, which Rust will not allow as
         // one borrow. Reading from a snapshot makes the aliasing go away
         // instead of papering over it with a raw pointer.
-        let snapshot = clone(it);
         let out: *mut CborValue = it;
         let mut len = usize::MAX;
-        return copy_string(&snapshot, core::ptr::null_mut(), &mut len, Some(out));
+        let mut all = false;
+        return iterate_string_chunks(
+            it,
+            core::ptr::null_mut(),
+            &mut len,
+            &mut all,
+            Some(out),
+            Iterate::Noop,
+        );
     }
     if nesting == 0 {
         return ERR_NESTING_TOO_DEEP;
@@ -643,87 +650,120 @@ pub extern "C" fn cbor_value_get_half_float_as_float(
     }
 }
 
-// -- strings ---------------------------------------------------------------
+// -- string access --------------------------------------------------------
+//
+// Upstream funnels copying, measuring and comparing through one primitive,
+// `iterate_string_chunks`, differing only in what it does with each chunk.
+// Keeping that shape matters: the NUL-termination rule and the "did it all
+// fit" flag are subtle, and three separate implementations would drift.
 
-/// Walks a string, definite or chunked, optionally copying it out.
+/// What to do with each chunk as it is walked.
+#[derive(Clone, Copy, PartialEq)]
+enum Iterate {
+    /// Measure only; `buffer` is ignored.
+    Noop,
+    /// Copy into `buffer` at the running offset.
+    Copy,
+    /// Compare against `buffer` at the running offset.
+    Compare,
+}
+
+/// Walks a string, definite or chunked, applying `op` to every chunk.
 ///
-/// `buffer` may be null, which is how `advance` skips a string without reading
-/// it. `buflen` is in/out: the capacity on the way in, the true length on the
-/// way out. `next` receives a cursor past the string.
-fn copy_string(
-    it: &CborValue,
+/// `buflen` is in/out: capacity in, true length out — never counting the NUL.
+/// `result` reports whether every chunk was processed, which for `Copy` means
+/// it all fit and for `Compare` means it all matched.
+///
+/// A NUL is written only when there is room *beyond* the content (`buflen >
+/// total`, strictly). For `Compare` that NUL check is what stops a prefix from
+/// comparing equal to a longer expected string.
+fn iterate_string_chunks(
+    value: &CborValue,
     buffer: *mut u8,
     buflen: &mut usize,
+    result: &mut bool,
     next: Option<*mut CborValue>,
+    op: Iterate,
 ) -> c_int {
-    let capacity = *buflen;
-    let mut total = 0usize;
-    let mut cursor = clone(it);
-    let chunked = it.flags & F_UNKNOWN_LENGTH != 0;
-    let major = it.type_;
+    let mut cursor = clone(value);
+    *result = true;
+    let mut total: usize = 0;
 
-    if chunked {
-        advance_bytes(&mut cursor, 1); // step over the indefinite head
+    let err = _cbor_value_begin_string_iteration(&mut cursor);
+    if err != NO_ERROR {
+        return err;
     }
 
     loop {
-        if chunked {
-            match read_byte(&cursor) {
-                Some(BREAK_BYTE) => {
-                    advance_bytes(&mut cursor, 1);
-                    break;
-                }
-                None => return ERR_UNEXPECTED_EOF,
-                Some(b) if b & MAJOR_TYPE_MASK != major => return ERR_ILLEGAL_TYPE,
-                Some(_) => {}
-            }
+        let mut ptr: *const c_void = core::ptr::null();
+        let mut chunk_len: usize = 0;
+        let err = get_chunk(&mut cursor, &mut ptr, &mut chunk_len);
+        if err == ERR_NO_MORE_STRING_CHUNKS {
+            break;
         }
-
-        let err = preparse_value(&mut cursor);
         if err != NO_ERROR {
             return err;
         }
-        let len = extract_number_and_advance(&mut cursor) as usize;
-        if !can_read(&cursor, len) {
-            return ERR_UNEXPECTED_EOF;
-        }
-        if !buffer.is_null() && total + len <= capacity {
-            // SAFETY: bounds checked just above on both sides.
-            unsafe { core::ptr::copy_nonoverlapping(ptr(&cursor), buffer.add(total), len) };
-        }
-        total += len;
-        advance_bytes(&mut cursor, len);
 
-        if !chunked {
-            break;
+        let Some(new_total) = total.checked_add(chunk_len) else {
+            return ERR_DATA_TOO_LARGE;
+        };
+
+        if *result && *buflen >= new_total {
+            // SAFETY: the chunk API returned this range, and the bounds check
+            // above proved the destination has room for it.
+            *result = unsafe { apply(op, buffer, total, ptr as *const u8, chunk_len) };
+        } else {
+            *result = false;
         }
+        total = new_total;
     }
 
-    let too_small = !buffer.is_null() && total > capacity;
+    if *result && *buflen > total {
+        // SAFETY: `buflen > total` leaves at least one byte spare.
+        *result = unsafe { apply(op, buffer, total, [0u8].as_ptr(), 1) };
+    }
     *buflen = total;
 
+    let err = _cbor_value_finish_string_iteration(&mut cursor);
     if let Some(n) = next {
-        // SAFETY: module contract; `next` may alias `it`, which is why the walk
-        // above ran on a copy.
-        unsafe {
-            let n = as_mut(n);
-            n.source = cursor.source;
-            n.parser = cursor.parser;
-            n.remaining = it.remaining;
-            n.flags = it.flags;
-            n.type_ = it.type_;
-            let err = preparse_next_value(n);
-            if err != NO_ERROR {
-                return err;
-            }
+        // SAFETY: module contract. `next` frequently aliases `value`, which is
+        // why the walk ran on a copy.
+        unsafe { *n = cursor };
+    }
+    err
+}
+
+/// SAFETY: `dst + offset .. + len` must be writable for `Copy`/readable for
+/// `Compare`, and `src .. src + len` readable. Both are checked by the caller.
+unsafe fn apply(op: Iterate, dst: *mut u8, offset: usize, src: *const u8, len: usize) -> bool {
+    match op {
+        Iterate::Noop => true,
+        Iterate::Copy => {
+            core::ptr::copy_nonoverlapping(src, dst.add(offset), len);
+            true
+        }
+        Iterate::Compare => {
+            core::slice::from_raw_parts(dst.add(offset) as *const u8, len)
+                == core::slice::from_raw_parts(src, len)
         }
     }
+}
 
-    if too_small {
-        ERR_OUT_OF_MEMORY
-    } else {
-        NO_ERROR
+/// One chunk at the cursor, advancing past it. Split out so
+/// `iterate_string_chunks` reads the same as upstream's loop.
+fn get_chunk(it: &mut CborValue, out: &mut *const c_void, len: &mut usize) -> c_int {
+    let (offset, n) = match chunk_size(it) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let err = transfer_string(it, out, offset, n);
+    if err != NO_ERROR {
+        return err;
     }
+    *len = n;
+    it.flags &= !F_BEFORE_FIRST_CHUNK;
+    NO_ERROR
 }
 
 const ERR_ILLEGAL_TYPE: c_int = 260;
@@ -734,19 +774,11 @@ pub extern "C" fn cbor_value_calculate_string_length(
     value: *const CborValue,
     length: *mut usize,
 ) -> c_int {
-    let mut len = usize::MAX;
-    // SAFETY: module contract.
-    let err = copy_string(
-        unsafe { as_ref(value) },
-        core::ptr::null_mut(),
-        &mut len,
-        None,
-    );
-    if err == NO_ERROR {
-        // SAFETY: caller-provided out-parameter.
-        unsafe { *length = len };
+    // SAFETY: module contract, plus a writable `length`.
+    unsafe {
+        *length = usize::MAX;
+        _cbor_value_copy_string(value, core::ptr::null_mut(), length, core::ptr::null_mut())
     }
-    err
 }
 
 #[no_mangle]
@@ -758,18 +790,33 @@ pub extern "C" fn _cbor_value_copy_string(
 ) -> c_int {
     // SAFETY: module contract, plus a writable `buflen`.
     unsafe {
-        let mut len = *buflen;
-        let err = copy_string(
+        let mut copied_all = false;
+        let op = if buffer.is_null() {
+            Iterate::Noop
+        } else {
+            Iterate::Copy
+        };
+        let err = iterate_string_chunks(
             as_ref(value),
             buffer as *mut u8,
-            &mut len,
+            &mut *buflen,
+            &mut copied_all,
             if next.is_null() { None } else { Some(next) },
+            op,
         );
-        *buflen = len;
-        err
+        if err != NO_ERROR {
+            return err;
+        }
+        if copied_all {
+            NO_ERROR
+        } else {
+            ERR_OUT_OF_MEMORY
+        }
     }
 }
 
+/// Compares without copying: the expected string is walked in place as the
+/// chunks arrive, so a mismatch costs nothing extra.
 #[no_mangle]
 pub extern "C" fn cbor_value_text_string_equals(
     value: *const CborValue,
@@ -784,61 +831,21 @@ pub extern "C" fn cbor_value_text_string_equals(
             return NO_ERROR;
         }
         let mut len = 0usize;
-        let err = copy_string(v, core::ptr::null_mut(), &mut len, None);
-        if err != NO_ERROR {
-            return err;
+        while *string.add(len) != 0 {
+            len += 1;
         }
-        let mut expected = 0usize;
-        while *string.add(expected) != 0 {
-            expected += 1;
-        }
-        if expected != len {
-            *result = false;
-            return NO_ERROR;
-        }
-        // Compare by copying into the caller's own string is not possible here,
-        // so walk the chunks again against it.
-        *result = compare_string(v, core::slice::from_raw_parts(string as *const u8, len));
-        NO_ERROR
+        // Capacity is the string length plus its NUL, so the trailing-NUL
+        // comparison runs and rejects a proper prefix.
+        let mut buflen = len + 1;
+        iterate_string_chunks(
+            v,
+            string as *mut u8,
+            &mut buflen,
+            &mut *result,
+            None,
+            Iterate::Compare,
+        )
     }
-}
-
-fn compare_string(it: &CborValue, want: &[u8]) -> bool {
-    let mut cursor = clone(it);
-    let chunked = it.flags & F_UNKNOWN_LENGTH != 0;
-    let major = it.type_;
-    let mut at = 0usize;
-
-    if chunked {
-        advance_bytes(&mut cursor, 1);
-    }
-    loop {
-        if chunked {
-            match read_byte(&cursor) {
-                Some(BREAK_BYTE) => break,
-                Some(b) if b & MAJOR_TYPE_MASK == major => {}
-                _ => return false,
-            }
-        }
-        if preparse_value(&mut cursor) != NO_ERROR {
-            return false;
-        }
-        let len = extract_number_and_advance(&mut cursor) as usize;
-        if !can_read(&cursor, len) || at + len > want.len() {
-            return false;
-        }
-        // SAFETY: bounds checked immediately above.
-        let chunk = unsafe { core::slice::from_raw_parts(ptr(&cursor), len) };
-        if chunk != &want[at..at + len] {
-            return false;
-        }
-        at += len;
-        advance_bytes(&mut cursor, len);
-        if !chunked {
-            break;
-        }
-    }
-    at == want.len()
 }
 
 #[no_mangle]
@@ -849,30 +856,66 @@ pub extern "C" fn cbor_value_map_find_value(
 ) -> c_int {
     // SAFETY: module contract.
     unsafe {
-        let m = as_ref(map);
         let e = as_mut(element);
-        let err = cbor_value_enter_container(m, e);
+        let err = cbor_value_enter_container(map, element);
         if err != NO_ERROR {
+            e.type_ = TYPE_INVALID;
             return err;
         }
+        let mut len = 0usize;
+        while *string.add(len) != 0 {
+            len += 1;
+        }
+
         while e.type_ != TYPE_INVALID {
-            let mut matches = false;
-            let err = cbor_value_text_string_equals(e, string, &mut matches);
+            // Keys may be tagged; the tag is not part of the comparison.
+            let err = cbor_value_skip_tag(element);
             if err != NO_ERROR {
+                e.type_ = TYPE_INVALID;
                 return err;
             }
-            let err = cbor_value_advance(e); // step to the value
+
+            if e.type_ == TYPE_TEXT_STRING {
+                let mut equals = false;
+                let mut buflen = len + 1;
+                let err = iterate_string_chunks(
+                    e,
+                    string as *mut u8,
+                    &mut buflen,
+                    &mut equals,
+                    Some(element),
+                    Iterate::Compare,
+                );
+                if err != NO_ERROR {
+                    e.type_ = TYPE_INVALID;
+                    return err;
+                }
+                if equals {
+                    // The cursor already sits on the value; re-decode its head
+                    // so the caller gets a usable iterator.
+                    return preparse_value(e);
+                }
+            } else {
+                let err = cbor_value_advance(element);
+                if err != NO_ERROR {
+                    e.type_ = TYPE_INVALID;
+                    return err;
+                }
+            }
+
+            // Skip the value this key belonged to.
+            let err = cbor_value_skip_tag(element);
             if err != NO_ERROR {
+                e.type_ = TYPE_INVALID;
                 return err;
             }
-            if matches {
-                return NO_ERROR;
-            }
-            let err = cbor_value_advance(e); // skip it, try the next key
+            let err = cbor_value_advance(element);
             if err != NO_ERROR {
+                e.type_ = TYPE_INVALID;
                 return err;
             }
         }
+
         e.type_ = TYPE_INVALID;
         NO_ERROR
     }
