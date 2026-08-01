@@ -255,3 +255,39 @@ fuzzer compares against is a separate executable driven over a pipe, per entry 5
 
 So: no C in the library, and the one place a C compiler runs at all is the tool that proves
 the library matches C.
+
+## 16. `cbor_value_advance` skips by scanning, where upstream descends
+
+Upstream walks a subtree recursively, decoding every item it passes into a `CborValue`
+on the way. Then it throws all of that away: the only things that outlive the walk are
+where the cursor ended up and whether anything was malformed. On a flat array of
+integers that cost 106 instructions an item in this port and 117 in the C, where the
+walk itself needs about ten.
+
+So the buffer source has `scan_subtree`, which reads heads and adds lengths in one flat
+loop with a small stack of how many items each open container still owes. Nesting is
+not otherwise interesting when skipping: a container of N items is just N more items to
+get through. It is the same traversal, without the bookkeeping nobody reads.
+
+This is the one place the port stops being a transliteration, so two things keep it
+honest.
+
+**It can only be right or absent.** The scan hands back to the recursive code the moment
+it meets anything it does not want to reason about: a malformed head, a length
+`enter_container` would reject, nesting past 64 levels, a break where one may not go. It
+never reports an error itself. Every error the API can produce still comes from the
+original code, on the original path, so the error taxonomy cannot drift.
+
+**It is checked against the C directly.** `tests/port/tst_advance_diff.c` replays inputs
+through `cbor_value_advance` and prints the error code, the final cursor offset and the
+resulting type. Built against both archives and diffed, it agrees on all 3,980 inputs of
+the fuzz, regression and benchmark corpora. `make test` runs the nine that ship.
+
+Parsing went from 0.98x of the C to 0.36x, which is 2.8x faster, and every corpus file
+improved. `deep_nest`, which had been the worst at 1.25x and resisted three earlier
+rounds of tuning, came out at 0.32x.
+
+Two things the scan cannot do, both by construction rather than by omission. A tag at
+the top of an advance stops on the tagged value rather than past it, because a tag
+prefixes an item instead of being one, and there is no enclosing loop to carry on into.
+And a reader source has no buffer to scan, so it keeps the recursive path entirely.
