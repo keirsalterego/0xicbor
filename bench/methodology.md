@@ -4,18 +4,17 @@ This measures the Rust port of tinycbor against the upstream C library on the
 same workload, through the same C header, in the same process shape. It is meant
 to be re-runnable by someone who has never seen this repository.
 
-**Headline, stated up front so nobody has to dig for it: at pure parsing the Rust
-port is faster than C on five of eight corpus files and slower on three, spanning
-0.82x to 1.19x, mean 0.984. It starts a process slightly slower (1.11x on the
-minimum, from a binary 119x larger) and uses more memory. It is faster at
-pretty-printing, in places by a lot, for a reason explained below that is mostly
-not about decoding. Both halves are in `results.json`; neither was dropped.** See
-[Results](#results).
+**Headline, stated up front so nobody has to dig for it: the Rust port is faster
+than the C on all sixteen throughput measurements, mean ratio 0.292, which is 3.4x.
+Parsing is 2.8x (every corpus file between 2.0x and 3.8x) and pretty-printing is
+4.5x. It is still slower to start a process, 1.11x on the minimum from a binary
+119x larger, and it still uses more memory. Both halves are in `results.json`;
+neither was dropped.** See [Results](#results).
 
-An earlier run of this same benchmark had parsing 1.23x-1.83x slower on all eight
-files, and that number was published here for a day. The cause and the fixes are in
-[Where Rust loses](#where-rust-loses); the old figures are kept below rather than
-quietly overwritten.
+Parsing was 1.23x-1.83x *slower* on all eight files when this benchmark was first
+run, and that number was published here for a day. Everything since is in
+[Where the time went](#where-the-time-went), and every earlier figure is kept in the
+history table rather than quietly overwritten.
 
 ---
 
@@ -253,63 +252,59 @@ they are the pretty-printer's worst cases, not because they favour anyone.
 
 ## Results
 
-Recorded run: `results.json`, linked at `2026-08-01T05:46:28Z`,
-`environment.libs_as_linked.rust.sha256` = `4428fd94031f3bac...`, both archives
-`matches_current_tree: true`. 1-minute load average during the run: **1.86**
+Recorded run: `results.json`, linked at `2026-08-01T07:31:16Z`,
+`environment.libs_as_linked.rust.sha256` = `76e80984d6bf9161...`, both archives
+`matches_current_tree: true`. 1-minute load average during the run: **2.61**
 on 8 cores. `rust_vs_c_p50` is `rust / c`, so **greater than 1.0 means the Rust
 port is slower**.
 
-### Where Rust loses
+### Where the time went
 
-**`parse` mode -- structural traversal, no output. Rust is faster on five of the
-eight files and slower on three.**
+**`parse` mode -- structural traversal, no output. Faster on all eight.**
 
 | file | C p50 | Rust p50 | p50 ratio | p99 ratio |
 |---|---:|---:|---:|---:|
-| `deep_nest.cbor` | 2,146,157 ns | 2,549,915 ns | **1.19x slower** | 1.04x |
-| `map_heavy.cbor` | 913,162 ns | 942,348 ns | **1.03x slower** | 0.92x |
-| `text_utf8.cbor` | 6,314 ns | 6,456 ns | **1.02x slower** | 0.95x |
-| `tagged.cbor` | 162,471 ns | 158,842 ns | **0.98x faster** | 0.98x |
-| `bytes_heavy.cbor` | 24,810 ns | 24,165 ns | **0.97x faster** | 0.97x |
-| `flat_array.cbor` | 964,159 ns | 912,632 ns | **0.95x faster** | 0.86x |
-| `indefinite.cbor` | 438,886 ns | 399,675 ns | **0.91x faster** | 0.85x |
-| `small_ints.cbor` | 192 ns | 157 ns | **0.82x faster** | 0.53x |
+| `small_ints.cbor` | 197 ns | 98 ns | **0.50x faster** | 0.48x |
+| `flat_array.cbor` | 1,010,526 ns | 463,657 ns | **0.46x faster** | 0.51x |
+| `bytes_heavy.cbor` | 23,962 ns | 10,199 ns | **0.43x faster** | 0.38x |
+| `text_utf8.cbor` | 6,317 ns | 2,306 ns | **0.36x faster** | 0.27x |
+| `deep_nest.cbor` | 2,096,361 ns | 660,661 ns | **0.32x faster** | 0.33x |
+| `indefinite.cbor` | 437,918 ns | 136,608 ns | **0.31x faster** | 0.31x |
+| `map_heavy.cbor` | 900,937 ns | 236,861 ns | **0.26x faster** | 0.25x |
+| `tagged.cbor` | 162,261 ns | 41,435 ns | **0.26x faster** | 0.23x |
 
-Mean p50 ratio across the eight: **0.984**.
+Mean p50 ratio across the eight: **0.362**, which is 2.8x faster.
 
-#### What is left is nesting depth, and it is not instruction count
+#### Nesting depth, which used to be the whole problem
 
-Everything remaining is concentrated in `deep_nest`, which is 4,000 chains of 40
-nested arrays. Holding the file size at 190 KB and varying only the nesting depth
-makes the shape obvious:
+`deep_nest.cbor` is 4,000 chains of 40 nested arrays, and for most of this port's life
+it was the file it lost on. Holding the size at 190 KB and varying only the depth used
+to show a clean slope: 0.94x at depth 4, crossing over around 16, 1.25x by 56. It was
+not doing more work at depth. Under callgrind at depth 80 the two ran 48.0 M and 47.6 M
+instructions, a gap of 0.83%, for a 23% difference in wall clock; at depth 8 the
+instruction gap was *larger* and this port was 9% *faster*. Branch mispredicts were
+0.5% against 0.3% and D1 misses were negligible on both, so it was neither of those.
+It was the recursion itself.
 
-| nesting depth | `parse` p50 ratio |
-|---:|---:|
-| 4 | 0.94 |
-| 8 | 0.91 |
-| 16 | 1.01 |
-| 24 | 1.08 |
-| 32 | 1.15 |
-| 40 | 1.19 |
-| 56 | 1.25 |
-| 80 | 1.23 |
+The subtree scan does not recurse, and the slope is gone:
 
-This port is *faster* than the C on shallow documents and loses ground as nesting
-grows, crossing over around depth 16 and flattening out past 56.
+| nesting depth | `parse` p50 ratio, before | after |
+|---:|---:|---:|
+| 4 | 0.94 | 0.33 |
+| 8 | 0.91 | 0.33 |
+| 16 | 1.01 | 0.31 |
+| 24 | 1.08 | 0.30 |
+| 32 | 1.15 | 0.30 |
+| 40 | 1.19 | 0.30 |
+| 56 | 1.25 | 0.30 |
+| 80 | 1.23 | 1.23 |
 
-It is not doing more work. Under callgrind at depth 80 the two run 48.0 M and
-47.6 M instructions, a gap of 0.83%, for a 23% difference in wall clock. At depth 8
-the instruction gap is *larger* (1.9%) and this port is 9% *faster*. Branch
-mispredicts are 0.5% against 0.3%, and D1 misses are negligible on both sides, so
-neither explains it either.
-
-What is left is microarchitectural and specific to recursion: `advance_recursive`
-calls itself once per level, and the deeper the chain the more the two
-implementations' frames and returns diverge in cost. Source-level tuning has taken
-this as far as it goes -- the three changes below moved the mean from 1.038 to 0.984
-and left `deep_nest` almost exactly where it was. Anything further would mean
-replacing the recursion with an explicit stack, which is a different algorithm from
-the one being ported, and this port's whole claim is that it is the same one.
+Depth 80 is the honest edge of it. The scan carries 64 levels and hands anything deeper
+to the recursive path, so past that the old number comes straight back. That boundary is
+a deliberate trade: the level array is initialised on every call, and raising it to 256
+cost `small_ints` 0.49x to 0.59x and `deep_nest` 0.30x to 0.33x for a case no real
+document reaches. Documents nested more than 64 deep are fuzzer output, and they are
+still correct, just no faster than they were.
 
 #### How this number moved, and why
 
@@ -324,7 +319,8 @@ machine and the same corpus:
 | `a936412f...` | 1.23x - 1.83x, 8 of 8 slower |
 | `cc003191...` (after `39e5be5 perf(parser): monomorphise on the byte source`) | 0.87x - 1.22x, 5 of 8 slower |
 | `56f98a76...` (after `e8a3e44` and `ec8300f`, below) | 0.84x - 1.23x, 4 of 8 slower |
-| `4428fd94...` (after `b952b7d`, below) | 0.82x - 1.19x, **3 of 8 slower** |
+| `4428fd94...` (after `b952b7d`, below) | 0.82x - 1.19x, 3 of 8 slower |
+| `76e80984...` (after `8b71557` and `ab98578`, below) | **0.26x - 0.50x, 0 of 8 slower** |
 
 The callback-driven source refactor named above as "the obvious suspect" was in
 fact the cause. It made every read test `parser->flags & ExternalSource` first,
@@ -344,7 +340,7 @@ Making the byte source a type parameter took the mean from 1.492 to 1.038 for
 4,128 bytes of extra `.text`. See `decisions.md` entry 13.
 
 Three later changes took it from 1.038 to 0.984, all found by reading the generated
-code or the profile rather than by guessing:
+code or the profile rather than by guessing, and a fourth took it to 0.362:
 
 - `e8a3e44` -- `advance_recursive` opened with `is_fixed_type` then `is_container`,
   which LLVM compiled into a rotate and a bit-table lookup: thirteen instructions
@@ -361,22 +357,31 @@ code or the profile rather than by guessing:
   the walker per call site; the profile shows `iterate_string_chunks.constprop.0`
   doing exactly that. Three types implementing one trait moved the choice to the
   call site.
+- `8b71557` and `ab98578` -- the one that stopped competing on the C's terms.
+  `cbor_value_advance` decodes every item it passes into a `CborValue` and then
+  discards all of it, because the only things that outlive the walk are the final
+  cursor and any error. Skipping the subtree with a flat scan instead of a recursive
+  descent took parsing from 0.984 to 0.362 and made every corpus file faster than the
+  C. It hands back to the recursive path on anything unusual, so every error the API
+  reports still comes from the original code. See `decisions.md` entry 16.
 
 **Startup is still a small loss:**
 
 | | C | Rust | ratio |
 |---|---:|---:|---:|
-| p50 | 787,198 ns | 824,864 ns | **1.05x slower** |
-| p99 | 1,161,505 ns | 1,240,973 ns | 1.07x |
-| min | 686,276 ns | 763,433 ns | **1.11x slower** |
-| binary size | 43,856 B | 5,203,024 B | **119x larger** |
+| p50 | 836,736 ns | 873,082 ns | **1.04x slower** |
+| p99 | 1,519,075 ns | 1,466,449 ns | 0.97x |
+| min | 699,660 ns | 774,243 ns | **1.11x slower** |
+| binary size | 43,856 B | 5,207,064 B | **119x larger** |
 
-The minimum is the column to read for a fixed cost like this, and across four runs
-on different machine load it has said 1.09x, 1.10x, 1.10x and 1.11x. One of those runs had
+This is the only measurement of the seventeen where the C still wins, and it is not
+about CBOR. The minimum is the column to read for a fixed cost like this, and across
+five runs on different machine load it has said 1.09x, 1.10x, 1.10x, 1.11x and
+1.11x. One of those runs had
 p50 and p99 showing Rust *faster*, which was the C side catching more of the
 machine's noise, not a result.
 
-Linking a Rust staticlib pulls in the Rust standard library: ~77 us more to start
+Linking a Rust staticlib pulls in the Rust standard library: ~75 us more to start
 and a binary two orders of magnitude bigger. Irrelevant for a long-lived process;
 not irrelevant for a CLI invoked in a loop, or for firmware, which is a
 substantial part of tinycbor's actual audience.
@@ -385,9 +390,9 @@ substantial part of tinycbor's actual audience.
 
 | | C | Rust |
 |---|---:|---:|
-| `parse`, range across corpus | 1,872 - 2,700 KiB | 2,200 - 3,068 KiB |
-| `pretty`, range across corpus | 1,940 - 2,396 KiB | 2,552 - 4,036 KiB |
-| `pretty`, worst ratio (`bytes_heavy.cbor`) | 2,392 KiB | 4,036 KiB (**1.69x**) |
+| `parse`, range across corpus | 1,824 - 2,652 KiB | 2,228 - 3,092 KiB |
+| `pretty`, range across corpus | 1,864 - 2,456 KiB | 2,640 - 4,108 KiB |
+| `pretty`, worst ratio (`text_utf8.cbor`) | 2,384 KiB | 4,020 KiB (**1.69x**) |
 
 Both figures include the input buffer and the driver's timing array, so the
 absolute numbers are upper bounds -- but the delta is real and one-directional.
@@ -400,18 +405,18 @@ output verified byte-identical by the equivalence gate.
 
 | file | C p50 | Rust p50 | ratio |
 |---|---:|---:|---:|
-| `bytes_heavy.cbor` | 29,048,669 ns | 917,972 ns | 0.03x (**32x faster**) |
-| `tagged.cbor` | 5,907,177 ns | 994,963 ns | 0.17x |
-| `indefinite.cbor` | 9,272,523 ns | 1,644,460 ns | 0.18x |
-| `deep_nest.cbor` | 21,908,687 ns | 4,523,782 ns | 0.21x |
-| `map_heavy.cbor` | 19,679,142 ns | 4,969,279 ns | 0.25x |
-| `flat_array.cbor` | 9,916,169 ns | 2,894,352 ns | 0.29x |
-| `small_ints.cbor` | 2,696 ns | 882 ns | 0.33x |
-| `text_utf8.cbor` | 15,186,709 ns | 7,282,783 ns | 0.48x |
+| `bytes_heavy.cbor` | 27,930,719 ns | 866,311 ns | 0.03x (**32x faster**) |
+| `tagged.cbor` | 4,642,327 ns | 698,775 ns | 0.15x |
+| `indefinite.cbor` | 8,020,005 ns | 1,240,775 ns | 0.15x |
+| `deep_nest.cbor` | 22,109,538 ns | 4,117,853 ns | 0.19x |
+| `map_heavy.cbor` | 19,109,038 ns | 4,667,256 ns | 0.24x |
+| `flat_array.cbor` | 8,328,553 ns | 2,179,569 ns | 0.26x |
+| `small_ints.cbor` | 2,646 ns | 763 ns | 0.29x |
+| `text_utf8.cbor` | 15,768,159 ns | 7,273,479 ns | 0.46x |
 
 **This win should be understood before it is quoted. It is not evidence that the
-Rust decoder is 32x faster -- the `parse` table above says the C decoder is the
-faster one.**
+Rust decoder is 32x faster -- the `parse` table above puts the decoder
+at 2.8x, not 32x.**
 
 Upstream's pretty printer routes every token through a `CborStreamFunction`
 callback that `cborpretty_stdio.c:29` implements as `vfprintf`, and its hex dump

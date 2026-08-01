@@ -6,9 +6,9 @@
     "intel_pstate_no_turbo": "0",
     "kernel": "7.0.12+kali-amd64",
     "loadavg": [
-      1.86279296875,
-      2.1875,
-      1.69091796875
+      2.61279296875,
+      2.64208984375,
+      2.40771484375
     ],
     "cc_version": "cc (Debian 15.3.0-1) 15.3.0",
     "rustc_version": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
@@ -16,7 +16,7 @@
     "rust_profile": "release, lto=true, codegen-units=1, panic=abort",
     "pinned_to_cpu": "2",
     "libs_as_linked": {
-      "linked_at_utc": "2026-08-01T05:46:28Z",
+      "linked_at_utc": "2026-08-01T07:31:16Z",
       "c_reference": {
         "path": "/home/keir/0xicbor/bench/reference/libtinycbor-upstream.a",
         "bytes": 76334,
@@ -25,12 +25,12 @@
       },
       "rust": {
         "path": "/home/keir/0xicbor/target/release/libtinycbor.a",
-        "bytes": 22241006,
-        "sha256": "4428fd94031f3bac5ec631ad5cc15cdb4c91f6c354d8de47702ec0c347ccabe4",
+        "bytes": 22250572,
+        "sha256": "76e80984d6bf916148533633a44f6095a9e00abbec12618652b15576f2406c55",
         "matches_current_tree": true
       }
     },
-    "timestamp_utc": "2026-08-01T05:53:11Z"
+    "timestamp_utc": "2026-08-01T07:31:57Z"
   },
   "output_equivalence": {
     "small_ints.cbor": {
@@ -93,20 +93,20 @@
   "startup": {
     "c": {
       "runs": 200,
-      "p50_ns": 787198,
-      "p99_ns": 1290367,
-      "min_ns": 686276,
+      "p50_ns": 836736,
+      "p99_ns": 1519075,
+      "min_ns": 699660,
       "binary_bytes": 43856
     },
     "rust": {
       "runs": 200,
-      "p50_ns": 824864,
-      "p99_ns": 1088025,
-      "min_ns": 763433,
-      "binary_bytes": 5206872
+      "p50_ns": 873082,
+      "p99_ns": 1466449,
+      "min_ns": 774243,
+      "binary_bytes": 5207064
     },
-    "rust_vs_c_p50": 1.0478,
-    "rust_vs_c_p99": 0.8432,
+    "rust_vs_c_p50": 1.0434,
+    "rust_vs_c_p99": 0.9654,
     "verdict": "rust slower"
   },
   "throughput": {
@@ -116,195 +116,195 @@
         "reps_per_block": 50000,
         "warmup_discarded": 5000,
         "rounds": 4,
-        "timer_overhead_ns": 14,
+        "timer_overhead_ns": 15,
         "c": {
           "samples": 180000,
-          "p50_ns": 192,
-          "p99_ns": 331,
+          "p50_ns": 197,
+          "p99_ns": 357,
           "min_ns": 184,
-          "max_ns": 494249,
-          "p50_mb_per_s": 302.08,
-          "peak_rss_kib": 2028
+          "max_ns": 46876,
+          "p50_mb_per_s": 294.42,
+          "peak_rss_kib": 2172
         },
         "rust": {
           "samples": 180000,
-          "p50_ns": 157,
-          "p99_ns": 177,
-          "min_ns": 150,
-          "max_ns": 44924,
-          "p50_mb_per_s": 369.43,
-          "peak_rss_kib": 2404
+          "p50_ns": 98,
+          "p99_ns": 171,
+          "min_ns": 80,
+          "max_ns": 38911,
+          "p50_mb_per_s": 591.84,
+          "peak_rss_kib": 2528
         },
-        "rust_vs_c_p50": 0.8177,
-        "rust_vs_c_p99": 0.5347,
+        "rust_vs_c_p50": 0.4975,
+        "rust_vs_c_p99": 0.479,
         "verdict": "rust faster"
       },
       "flat_array.cbor": {
         "bytes": 163797,
-        "reps_per_block": 300,
-        "warmup_discarded": 30,
+        "reps_per_block": 243,
+        "warmup_discarded": 24,
         "rounds": 4,
-        "timer_overhead_ns": 14,
+        "timer_overhead_ns": 15,
         "c": {
-          "samples": 1080,
-          "p50_ns": 964159,
-          "p99_ns": 1512815,
-          "min_ns": 941693,
-          "max_ns": 1602592,
-          "p50_mb_per_s": 169.89,
-          "peak_rss_kib": 1872
+          "samples": 876,
+          "p50_ns": 1010526,
+          "p99_ns": 1521325,
+          "min_ns": 925366,
+          "max_ns": 5592348,
+          "p50_mb_per_s": 162.09,
+          "peak_rss_kib": 1936
         },
         "rust": {
-          "samples": 1080,
-          "p50_ns": 912632,
-          "p99_ns": 1305446,
-          "min_ns": 878195,
-          "max_ns": 1579845,
-          "p50_mb_per_s": 179.48,
-          "peak_rss_kib": 2236
+          "samples": 876,
+          "p50_ns": 463657,
+          "p99_ns": 776358,
+          "min_ns": 429384,
+          "max_ns": 806605,
+          "p50_mb_per_s": 353.27,
+          "peak_rss_kib": 2356
         },
-        "rust_vs_c_p50": 0.9466,
-        "rust_vs_c_p99": 0.8629,
+        "rust_vs_c_p50": 0.4588,
+        "rust_vs_c_p99": 0.5103,
         "verdict": "rust faster"
       },
       "deep_nest.cbor": {
         "bytes": 191490,
-        "reps_per_block": 119,
+        "reps_per_block": 116,
         "warmup_discarded": 11,
         "rounds": 4,
         "timer_overhead_ns": 14,
         "c": {
-          "samples": 432,
-          "p50_ns": 2146157,
-          "p99_ns": 3506487,
-          "min_ns": 2026713,
-          "max_ns": 3639014,
-          "p50_mb_per_s": 89.22,
-          "peak_rss_kib": 1964
+          "samples": 420,
+          "p50_ns": 2096361,
+          "p99_ns": 3259123,
+          "min_ns": 2017040,
+          "max_ns": 3379447,
+          "p50_mb_per_s": 91.34,
+          "peak_rss_kib": 1968
         },
         "rust": {
-          "samples": 432,
-          "p50_ns": 2549915,
-          "p99_ns": 3648221,
-          "min_ns": 2497055,
-          "max_ns": 3739008,
-          "p50_mb_per_s": 75.1,
-          "peak_rss_kib": 2316
+          "samples": 420,
+          "p50_ns": 660661,
+          "p99_ns": 1076932,
+          "min_ns": 629563,
+          "max_ns": 1122664,
+          "p50_mb_per_s": 289.85,
+          "peak_rss_kib": 2392
         },
-        "rust_vs_c_p50": 1.1881,
-        "rust_vs_c_p99": 1.0404,
-        "verdict": "rust slower"
+        "rust_vs_c_p50": 0.3151,
+        "rust_vs_c_p99": 0.3304,
+        "verdict": "rust faster"
       },
       "map_heavy.cbor": {
         "bytes": 338938,
-        "reps_per_block": 298,
-        "warmup_discarded": 29,
+        "reps_per_block": 348,
+        "warmup_discarded": 34,
         "rounds": 4,
         "timer_overhead_ns": 14,
         "c": {
-          "samples": 1076,
-          "p50_ns": 913162,
-          "p99_ns": 1627680,
-          "min_ns": 866666,
-          "max_ns": 1682337,
-          "p50_mb_per_s": 371.17,
-          "peak_rss_kib": 2048
+          "samples": 1256,
+          "p50_ns": 900937,
+          "p99_ns": 1614797,
+          "min_ns": 847631,
+          "max_ns": 1789991,
+          "p50_mb_per_s": 376.21,
+          "peak_rss_kib": 2108
         },
         "rust": {
-          "samples": 1076,
-          "p50_ns": 942348,
-          "p99_ns": 1497061,
-          "min_ns": 895013,
-          "max_ns": 1560407,
-          "p50_mb_per_s": 359.67,
-          "peak_rss_kib": 2480
+          "samples": 1256,
+          "p50_ns": 236861,
+          "p99_ns": 403385,
+          "min_ns": 211745,
+          "max_ns": 429459,
+          "p50_mb_per_s": 1430.96,
+          "peak_rss_kib": 2492
         },
-        "rust_vs_c_p50": 1.032,
-        "rust_vs_c_p99": 0.9198,
-        "verdict": "rust slower"
+        "rust_vs_c_p50": 0.2629,
+        "rust_vs_c_p99": 0.2498,
+        "verdict": "rust faster"
       },
       "text_utf8.cbor": {
         "bytes": 563721,
-        "reps_per_block": 47221,
-        "warmup_discarded": 4722,
-        "rounds": 4,
-        "timer_overhead_ns": 14,
-        "c": {
-          "samples": 169996,
-          "p50_ns": 6314,
-          "p99_ns": 11647,
-          "min_ns": 5893,
-          "max_ns": 299154,
-          "p50_mb_per_s": 89281.12,
-          "peak_rss_kib": 2700
-        },
-        "rust": {
-          "samples": 169996,
-          "p50_ns": 6456,
-          "p99_ns": 11112,
-          "min_ns": 6145,
-          "max_ns": 112950,
-          "p50_mb_per_s": 87317.38,
-          "peak_rss_kib": 3068
-        },
-        "rust_vs_c_p50": 1.0225,
-        "rust_vs_c_p99": 0.9541,
-        "verdict": "rust slower"
-      },
-      "bytes_heavy.cbor": {
-        "bytes": 628060,
-        "reps_per_block": 8656,
-        "warmup_discarded": 865,
+        "reps_per_block": 48820,
+        "warmup_discarded": 4882,
         "rounds": 4,
         "timer_overhead_ns": 15,
         "c": {
-          "samples": 31164,
-          "p50_ns": 24810,
-          "p99_ns": 41865,
-          "min_ns": 22914,
-          "max_ns": 59855,
-          "p50_mb_per_s": 25314.79,
-          "peak_rss_kib": 2452
+          "samples": 175752,
+          "p50_ns": 6317,
+          "p99_ns": 12346,
+          "min_ns": 5814,
+          "max_ns": 270943,
+          "p50_mb_per_s": 89238.72,
+          "peak_rss_kib": 2652
         },
         "rust": {
-          "samples": 31164,
-          "p50_ns": 24165,
-          "p99_ns": 40666,
-          "min_ns": 22575,
-          "max_ns": 76890,
-          "p50_mb_per_s": 25990.48,
-          "peak_rss_kib": 2824
+          "samples": 175752,
+          "p50_ns": 2306,
+          "p99_ns": 3324,
+          "min_ns": 2182,
+          "max_ns": 44249,
+          "p50_mb_per_s": 244458.37,
+          "peak_rss_kib": 3092
         },
-        "rust_vs_c_p50": 0.974,
-        "rust_vs_c_p99": 0.9714,
+        "rust_vs_c_p50": 0.365,
+        "rust_vs_c_p99": 0.2692,
+        "verdict": "rust faster"
+      },
+      "bytes_heavy.cbor": {
+        "bytes": 628060,
+        "reps_per_block": 12586,
+        "warmup_discarded": 1258,
+        "rounds": 4,
+        "timer_overhead_ns": 14,
+        "c": {
+          "samples": 45312,
+          "p50_ns": 23962,
+          "p99_ns": 39682,
+          "min_ns": 22716,
+          "max_ns": 72888,
+          "p50_mb_per_s": 26210.67,
+          "peak_rss_kib": 2432
+        },
+        "rust": {
+          "samples": 45312,
+          "p50_ns": 10199,
+          "p99_ns": 15235,
+          "min_ns": 9352,
+          "max_ns": 51918,
+          "p50_mb_per_s": 61580.55,
+          "peak_rss_kib": 2848
+        },
+        "rust_vs_c_p50": 0.4256,
+        "rust_vs_c_p99": 0.3839,
         "verdict": "rust faster"
       },
       "indefinite.cbor": {
         "bytes": 182665,
-        "reps_per_block": 710,
-        "warmup_discarded": 71,
+        "reps_per_block": 651,
+        "warmup_discarded": 65,
         "rounds": 4,
         "timer_overhead_ns": 15,
         "c": {
-          "samples": 2556,
-          "p50_ns": 438886,
-          "p99_ns": 751471,
-          "min_ns": 414512,
-          "max_ns": 782119,
-          "p50_mb_per_s": 416.2,
-          "peak_rss_kib": 1880
+          "samples": 2344,
+          "p50_ns": 437918,
+          "p99_ns": 724630,
+          "min_ns": 414055,
+          "max_ns": 789838,
+          "p50_mb_per_s": 417.12,
+          "peak_rss_kib": 1956
         },
         "rust": {
-          "samples": 2556,
-          "p50_ns": 399675,
-          "p99_ns": 639086,
-          "min_ns": 378538,
-          "max_ns": 693441,
-          "p50_mb_per_s": 457.03,
-          "peak_rss_kib": 2200
+          "samples": 2344,
+          "p50_ns": 136608,
+          "p99_ns": 225643,
+          "min_ns": 133173,
+          "max_ns": 257118,
+          "p50_mb_per_s": 1337.15,
+          "peak_rss_kib": 2320
         },
-        "rust_vs_c_p50": 0.9107,
-        "rust_vs_c_p99": 0.8504,
+        "rust_vs_c_p50": 0.3119,
+        "rust_vs_c_p99": 0.3114,
         "verdict": "rust faster"
       },
       "tagged.cbor": {
@@ -315,24 +315,24 @@
         "timer_overhead_ns": 15,
         "c": {
           "samples": 7020,
-          "p50_ns": 162471,
-          "p99_ns": 298901,
-          "min_ns": 153763,
-          "max_ns": 327636,
-          "p50_mb_per_s": 602.51,
-          "peak_rss_kib": 1880
+          "p50_ns": 162261,
+          "p99_ns": 323329,
+          "min_ns": 153738,
+          "max_ns": 486961,
+          "p50_mb_per_s": 603.29,
+          "peak_rss_kib": 1824
         },
         "rust": {
           "samples": 7020,
-          "p50_ns": 158842,
-          "p99_ns": 294232,
-          "min_ns": 150593,
-          "max_ns": 393337,
-          "p50_mb_per_s": 616.28,
-          "peak_rss_kib": 2208
+          "p50_ns": 41435,
+          "p99_ns": 74888,
+          "min_ns": 39500,
+          "max_ns": 98411,
+          "p50_mb_per_s": 2362.52,
+          "peak_rss_kib": 2228
         },
-        "rust_vs_c_p50": 0.9777,
-        "rust_vs_c_p99": 0.9844,
+        "rust_vs_c_p50": 0.2554,
+        "rust_vs_c_p99": 0.2316,
         "verdict": "rust faster"
       }
     },
@@ -345,24 +345,24 @@
         "timer_overhead_ns": 15,
         "c": {
           "samples": 180000,
-          "p50_ns": 2697,
-          "p99_ns": 6660,
-          "min_ns": 2480,
-          "max_ns": 283325,
-          "p50_mb_per_s": 21.51,
-          "peak_rss_kib": 2236
+          "p50_ns": 2646,
+          "p99_ns": 6119,
+          "min_ns": 2482,
+          "max_ns": 38921,
+          "p50_mb_per_s": 21.92,
+          "peak_rss_kib": 2228
         },
         "rust": {
           "samples": 180000,
-          "p50_ns": 766,
-          "p99_ns": 1508,
-          "min_ns": 704,
-          "max_ns": 36630,
-          "p50_mb_per_s": 75.72,
-          "peak_rss_kib": 2728
+          "p50_ns": 763,
+          "p99_ns": 1685,
+          "min_ns": 690,
+          "max_ns": 36208,
+          "p50_mb_per_s": 76.02,
+          "peak_rss_kib": 2724
         },
-        "rust_vs_c_p50": 0.284,
-        "rust_vs_c_p99": 0.2264,
+        "rust_vs_c_p50": 0.2884,
+        "rust_vs_c_p99": 0.2754,
         "verdict": "rust faster"
       },
       "flat_array.cbor": {
@@ -370,27 +370,27 @@
         "reps_per_block": 50,
         "warmup_discarded": 5,
         "rounds": 4,
-        "timer_overhead_ns": 14,
+        "timer_overhead_ns": 15,
         "c": {
           "samples": 180,
-          "p50_ns": 8361612,
-          "p99_ns": 18071441,
-          "min_ns": 7860761,
-          "max_ns": 18474981,
-          "p50_mb_per_s": 19.59,
-          "peak_rss_kib": 1944
+          "p50_ns": 8328553,
+          "p99_ns": 13531285,
+          "min_ns": 7663851,
+          "max_ns": 15795198,
+          "p50_mb_per_s": 19.67,
+          "peak_rss_kib": 1864
         },
         "rust": {
           "samples": 180,
-          "p50_ns": 2225797,
-          "p99_ns": 3561958,
-          "min_ns": 2117387,
-          "max_ns": 3595865,
-          "p50_mb_per_s": 73.59,
-          "peak_rss_kib": 2856
+          "p50_ns": 2179569,
+          "p99_ns": 3630407,
+          "min_ns": 2072271,
+          "max_ns": 3691296,
+          "p50_mb_per_s": 75.15,
+          "peak_rss_kib": 2900
         },
-        "rust_vs_c_p50": 0.2662,
-        "rust_vs_c_p99": 0.1971,
+        "rust_vs_c_p50": 0.2617,
+        "rust_vs_c_p99": 0.2683,
         "verdict": "rust faster"
       },
       "deep_nest.cbor": {
@@ -401,24 +401,24 @@
         "timer_overhead_ns": 14,
         "c": {
           "samples": 180,
-          "p50_ns": 21666473,
-          "p99_ns": 40753296,
-          "min_ns": 20121772,
-          "max_ns": 41380821,
-          "p50_mb_per_s": 8.84,
-          "peak_rss_kib": 1960
+          "p50_ns": 22109538,
+          "p99_ns": 37233666,
+          "min_ns": 20281029,
+          "max_ns": 44189185,
+          "p50_mb_per_s": 8.66,
+          "peak_rss_kib": 2036
         },
         "rust": {
           "samples": 180,
-          "p50_ns": 3972497,
-          "p99_ns": 6878782,
-          "min_ns": 3764374,
-          "max_ns": 6908929,
-          "p50_mb_per_s": 48.2,
-          "peak_rss_kib": 2884
+          "p50_ns": 4117853,
+          "p99_ns": 5622256,
+          "min_ns": 3794300,
+          "max_ns": 5850049,
+          "p50_mb_per_s": 46.5,
+          "peak_rss_kib": 2892
         },
-        "rust_vs_c_p50": 0.1833,
-        "rust_vs_c_p99": 0.1688,
+        "rust_vs_c_p50": 0.1862,
+        "rust_vs_c_p99": 0.151,
         "verdict": "rust faster"
       },
       "map_heavy.cbor": {
@@ -429,24 +429,24 @@
         "timer_overhead_ns": 14,
         "c": {
           "samples": 180,
-          "p50_ns": 18311628,
-          "p99_ns": 36257149,
-          "min_ns": 17545522,
-          "max_ns": 36404965,
-          "p50_mb_per_s": 18.51,
-          "peak_rss_kib": 2180
+          "p50_ns": 19109038,
+          "p99_ns": 35511673,
+          "min_ns": 17581134,
+          "max_ns": 36753299,
+          "p50_mb_per_s": 17.74,
+          "peak_rss_kib": 2160
         },
         "rust": {
           "samples": 180,
-          "p50_ns": 4574705,
-          "p99_ns": 8983123,
-          "min_ns": 4276469,
-          "max_ns": 9466911,
-          "p50_mb_per_s": 74.09,
-          "peak_rss_kib": 3456
+          "p50_ns": 4667256,
+          "p99_ns": 8442906,
+          "min_ns": 4290621,
+          "max_ns": 8669443,
+          "p50_mb_per_s": 72.62,
+          "peak_rss_kib": 3528
         },
-        "rust_vs_c_p50": 0.2498,
-        "rust_vs_c_p99": 0.2478,
+        "rust_vs_c_p50": 0.2442,
+        "rust_vs_c_p99": 0.2378,
         "verdict": "rust faster"
       },
       "text_utf8.cbor": {
@@ -457,24 +457,24 @@
         "timer_overhead_ns": 15,
         "c": {
           "samples": 180,
-          "p50_ns": 14318217,
-          "p99_ns": 27824414,
-          "min_ns": 13488063,
-          "max_ns": 29784086,
-          "p50_mb_per_s": 39.37,
-          "peak_rss_kib": 2396
+          "p50_ns": 15768159,
+          "p99_ns": 30793050,
+          "min_ns": 13540716,
+          "max_ns": 32086994,
+          "p50_mb_per_s": 35.75,
+          "peak_rss_kib": 2384
         },
         "rust": {
           "samples": 180,
-          "p50_ns": 6965655,
-          "p99_ns": 14532961,
-          "min_ns": 6562358,
-          "max_ns": 15205270,
-          "p50_mb_per_s": 80.93,
-          "peak_rss_kib": 3928
+          "p50_ns": 7273479,
+          "p99_ns": 16924000,
+          "min_ns": 6704867,
+          "max_ns": 16979995,
+          "p50_mb_per_s": 77.5,
+          "peak_rss_kib": 4020
         },
-        "rust_vs_c_p50": 0.4865,
-        "rust_vs_c_p99": 0.5223,
+        "rust_vs_c_p50": 0.4613,
+        "rust_vs_c_p99": 0.5496,
         "verdict": "rust faster"
       },
       "bytes_heavy.cbor": {
@@ -485,24 +485,24 @@
         "timer_overhead_ns": 14,
         "c": {
           "samples": 180,
-          "p50_ns": 26950102,
-          "p99_ns": 49838954,
-          "min_ns": 25544118,
-          "max_ns": 49872250,
-          "p50_mb_per_s": 23.3,
-          "peak_rss_kib": 2392
+          "p50_ns": 27930719,
+          "p99_ns": 49658244,
+          "min_ns": 25986636,
+          "max_ns": 55443577,
+          "p50_mb_per_s": 22.49,
+          "peak_rss_kib": 2456
         },
         "rust": {
           "samples": 180,
-          "p50_ns": 838369,
-          "p99_ns": 1375273,
-          "min_ns": 803550,
-          "max_ns": 1512722,
-          "p50_mb_per_s": 749.15,
-          "peak_rss_kib": 4036
+          "p50_ns": 866311,
+          "p99_ns": 1662861,
+          "min_ns": 818261,
+          "max_ns": 1673942,
+          "p50_mb_per_s": 724.98,
+          "peak_rss_kib": 4108
         },
-        "rust_vs_c_p50": 0.0311,
-        "rust_vs_c_p99": 0.0276,
+        "rust_vs_c_p50": 0.031,
+        "rust_vs_c_p99": 0.0335,
         "verdict": "rust faster"
       },
       "indefinite.cbor": {
@@ -510,79 +510,64 @@
         "reps_per_block": 50,
         "warmup_discarded": 5,
         "rounds": 4,
-        "timer_overhead_ns": 15,
+        "timer_overhead_ns": 14,
         "c": {
           "samples": 180,
-          "p50_ns": 7855326,
-          "p99_ns": 15449955,
-          "min_ns": 7494035,
-          "max_ns": 15805801,
-          "p50_mb_per_s": 23.25,
-          "peak_rss_kib": 2020
+          "p50_ns": 8020005,
+          "p99_ns": 13208267,
+          "min_ns": 7511729,
+          "max_ns": 14470430,
+          "p50_mb_per_s": 22.78,
+          "peak_rss_kib": 2024
         },
         "rust": {
           "samples": 180,
-          "p50_ns": 1262987,
-          "p99_ns": 2713593,
-          "min_ns": 1135690,
-          "max_ns": 2747982,
-          "p50_mb_per_s": 144.63,
-          "peak_rss_kib": 2764
+          "p50_ns": 1240775,
+          "p99_ns": 2240859,
+          "min_ns": 1138445,
+          "max_ns": 2343396,
+          "p50_mb_per_s": 147.22,
+          "peak_rss_kib": 2756
         },
-        "rust_vs_c_p50": 0.1608,
-        "rust_vs_c_p99": 0.1756,
+        "rust_vs_c_p50": 0.1547,
+        "rust_vs_c_p99": 0.1697,
         "verdict": "rust faster"
       },
       "tagged.cbor": {
         "bytes": 97891,
-        "reps_per_block": 69,
+        "reps_per_block": 67,
         "warmup_discarded": 6,
         "rounds": 4,
-        "timer_overhead_ns": 14,
+        "timer_overhead_ns": 15,
         "c": {
-          "samples": 252,
-          "p50_ns": 4329415,
-          "p99_ns": 5812241,
-          "min_ns": 4180954,
-          "max_ns": 6201946,
-          "p50_mb_per_s": 22.61,
-          "peak_rss_kib": 1940
+          "samples": 244,
+          "p50_ns": 4642327,
+          "p99_ns": 9119353,
+          "min_ns": 4172288,
+          "max_ns": 9477688,
+          "p50_mb_per_s": 21.09,
+          "peak_rss_kib": 1944
         },
         "rust": {
-          "samples": 252,
-          "p50_ns": 640488,
-          "p99_ns": 1252312,
-          "min_ns": 618815,
-          "max_ns": 1341267,
-          "p50_mb_per_s": 152.84,
-          "peak_rss_kib": 2552
+          "samples": 244,
+          "p50_ns": 698775,
+          "p99_ns": 1512527,
+          "min_ns": 611042,
+          "max_ns": 1556504,
+          "p50_mb_per_s": 140.09,
+          "peak_rss_kib": 2640
         },
-        "rust_vs_c_p50": 0.1479,
-        "rust_vs_c_p99": 0.2155,
+        "rust_vs_c_p50": 0.1505,
+        "rust_vs_c_p99": 0.1659,
         "verdict": "rust faster"
       }
     }
   },
   "regressions_rust_slower_at_p50": [
     {
-      "mode": "parse",
-      "file": "deep_nest.cbor",
-      "rust_vs_c_p50": 1.1881
-    },
-    {
       "mode": "startup",
       "file": "-",
-      "rust_vs_c_p50": 1.0478
-    },
-    {
-      "mode": "parse",
-      "file": "map_heavy.cbor",
-      "rust_vs_c_p50": 1.032
-    },
-    {
-      "mode": "parse",
-      "file": "text_utf8.cbor",
-      "rust_vs_c_p50": 1.0225
+      "rust_vs_c_p50": 1.0434
     }
   ],
   "notes": [
