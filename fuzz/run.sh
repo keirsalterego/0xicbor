@@ -45,7 +45,12 @@ mkdir -p "$corpus"
 if [ -z "$(ls -A "$corpus")" ]; then
   i=0
   flags=('' '' '' '')
-  if [ "$TARGET" = json_diff ]; then flags=('\x00' '\x01' '\x04' '\x0b'); fi
+  case "$TARGET" in
+    json_diff) flags=('\x00' '\x01' '\x04' '\x0b') ;;
+    # Little-endian u32: Basic, CanonicalFormat, StrictMode, Strictest.
+    validate_diff) flags=('\x00\x00\x00\x00' '\xff\x0f\x00\x00' \
+                          '\x00\xff\x0f\x00' '\xff\xff\xff\xff') ;;
+  esac
   for s in '\x00' '\x20' '\x18\xff' '\x3b\xff\xff\xff\xff\xff\xff\xff\xff' \
            '\x43\x01\x02\x03' '\x63\x61\x62\x63' '\x83\x01\x02\x03' \
            '\xa2\x61\x61\x01\x61\x62\x02' '\x9f\x01\x02\xff' \

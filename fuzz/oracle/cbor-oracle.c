@@ -6,8 +6,10 @@
  * one of the two renderers, writes the result to stdout, and exits with the
  * CborError.
  *
- *     cbor-oracle              diagnostic notation, the default
- *     cbor-oracle json FLAGS   JSON, with that CborToJsonFlags bitmask
+ *     cbor-oracle                  diagnostic notation, the default
+ *     cbor-oracle json FLAGS       JSON, with that CborToJsonFlags bitmask
+ *     cbor-oracle validate FLAGS   cbor_value_validate, that CborValidationFlags
+ *                                  bitmask, no output beyond the error code
  *
  * No arguments keeps the original behaviour, so the pretty harness spawns it
  * exactly as it always did.
@@ -47,15 +49,20 @@ int main(int argc, char **argv)
     CborValue value;
     CborError err;
     size_t len;
-    int json = argc > 1 && strcmp(argv[1], "json") == 0;
-    int flags = argc > 2 ? atoi(argv[2]) : 0;
+    const char *mode = argc > 1 ? argv[1] : "";
+    unsigned long flags = argc > 2 ? strtoul(argv[2], NULL, 10) : 0;
 
     len = fread(buf, 1, sizeof(buf), stdin);
 
     err = cbor_parser_init(buf, len, 0, &parser, &value);
-    if (err == CborNoError)
-        err = json ? cbor_value_to_json_advance(stdout, &value, flags)
-                   : cbor_value_to_pretty_advance(stdout, &value);
+    if (err == CborNoError) {
+        if (strcmp(mode, "json") == 0)
+            err = cbor_value_to_json_advance(stdout, &value, (int)flags);
+        else if (strcmp(mode, "validate") == 0)
+            err = cbor_value_validate(&value, (uint32_t)flags);
+        else
+            err = cbor_value_to_pretty_advance(stdout, &value);
+    }
 
     fflush(stdout);
     fprintf(stderr, "%d\n", (int)err);
