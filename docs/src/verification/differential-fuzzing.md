@@ -49,6 +49,9 @@ Stated in full, including the run that found something.
 | 252,830 | 121 s | clean |
 | 420,793 | 900 s | **one divergence**, see below |
 | 1,507,421 | 901 s | clean, after the fix |
+| 511,224 | 301 s | clean, after the string-walk change |
+| 529,508 | 301 s | clean, after the subtree scan landed |
+| 922,346 | 601 s | clean, after the scan learned indefinite lengths |
 
 Two clean runs before a real bug is the whole argument for running it longer than the
 minimum. Sixty seconds of differential fuzzing is enough to claim you did it. It is not
@@ -56,8 +59,10 @@ enough to find anything past the shallow water. The bug that was there took seve
 minutes and four hundred thousand executions to surface, and both earlier runs had
 already reported success.
 
-The final run went 3.6x further than the one that found the bug, on a corpus the
-earlier runs had grown, and stayed clean.
+The run after the fix went 3.6x further than the one that found the bug, on a corpus
+the earlier runs had grown, and stayed clean. Every later entry is a re-verification
+after a change to the parser, because a change that touches how bytes are walked is
+exactly what this is for.
 
 ## What it found
 
