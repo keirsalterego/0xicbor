@@ -32,6 +32,9 @@ make that one move physically possible.
    about sixty lines. Small enough to get right, and it has a test that proves it.
 4. **[Match printf exactly](matching-printf.md)** — where most of the remaining bugs
    live, and where I was wrong three times in a row.
+5. **[When the C is faster](when-c-is-faster.md)** — green tests and 1.49x slower.
+   Finding out which GCC optimisation pass you are competing with, and what the Rust
+   equivalent of it is. Two wrong hypotheses before the right one.
 
 ## What this costs you
 

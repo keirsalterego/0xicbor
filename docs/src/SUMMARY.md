@@ -9,6 +9,7 @@
   - [2. Match the ABI](cookbook/matching-the-abi.md)
   - [3. Write the first module](cookbook/first-module.md)
   - [4. Match printf exactly](cookbook/matching-printf.md)
+  - [5. When the C is faster](cookbook/when-c-is-faster.md)
 
 # The port
 
