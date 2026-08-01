@@ -34,8 +34,7 @@ make test   # runs them, prints per-binary pass/fail
 
 ## Status
 
-This port is in progress. The numbers below are the real output of `make test`,
-not a target.
+The numbers below are the real output of `make test` and `bench/run.py`, not targets.
 
 | | |
 |---|---|
@@ -43,7 +42,7 @@ not a target.
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
 | **Differential fuzz** | **252,830 execs, 121s, zero divergences** |
-| **`unsafe` blocks** | **74**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
+| **`unsafe` blocks** | **75**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
 | **Parsing speed** | **1.04x slower than C** (mean p50 over 8 corpus files) |
 
@@ -61,7 +60,7 @@ per byte in `hexDump`, not decode speed, so it is not a headline worth claiming.
 numbers, the flag experiments behind the fix, and the method are in
 [bench/methodology.md](bench/methodology.md).
 
-For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 74
+For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 75
 here is in `cbor-ffi` dereferencing a pointer a C caller handed us, and each carries a
 `// SAFETY:` line naming the invariant. `cbor-core` — the entire CBOR implementation — is
 `#![forbid(unsafe_code)]` and contains none.

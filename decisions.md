@@ -140,10 +140,11 @@ not the qmake-era one.
 ## 12. The only C symbols we call are libc's `fwrite`, `malloc` and `free`
 
 The rule is no source-language runtime: a C-to-Rust port must not FFI back into the
-library it replaces. This port does not. `cargo tree` is two crates and nothing else, there
-is no `build.rs`, no `cc`, no `bindgen`, and `libtinycbor.a` is compiled entirely from Rust.
-The differential fuzz oracle is upstream's C built as a standalone binary and driven as a
-subprocess over a pipe.
+library it replaces. This port does not. `cargo tree` lists four crates and they are all
+in this repository — `cbor-core`, `cbor-ffi` and the two tools — with no third-party
+dependency at any depth, no `build.rs`, no `cc` and no `bindgen`. `libtinycbor.a` is
+compiled entirely from Rust. The differential fuzz oracle is upstream's C built as a
+standalone binary and driven as a subprocess over a pipe.
 
 There are exactly two `extern "C"` blocks in the tree, both libc, both forced by the ABI
 rather than chosen.
@@ -248,9 +249,9 @@ on `libfuzzer-sys`, which builds libFuzzer's own C++ runtime and therefore pulls
 harness and is never shipped.
 
 The artifact under judgement is `target/release/libtinycbor.a`. `cargo tree` at the
-workspace root is two crates — `cbor-core` and `cbor-ffi` — with no build script and no `cc`
-anywhere in it, and `fuzz/` is deliberately not a workspace member. The C oracle the fuzzer
-compares against is a separate executable driven over a pipe, per entry 5.
+workspace root lists only the four crates in this repository, with no build script and no
+`cc` anywhere in it, and `fuzz/` is deliberately not a workspace member. The C oracle the
+fuzzer compares against is a separate executable driven over a pipe, per entry 5.
 
 So: no C in the library, and the one place a C compiler runs at all is the tool that proves
 the library matches C.

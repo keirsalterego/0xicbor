@@ -13,8 +13,9 @@ Real output, updated as the port moves. Nothing here is a target.
 | `tst_cpp` | — | — | inapplicable, see [decision 2](../reference/decisions.md) |
 | **Total** | **4,929** | **0** | of 4,929 reachable |
 
-Everything that can pass, passes. `_cbor_value_dup_string` is the one entry point still
-stubbed; nothing in the suite exercises it.
+Everything that can pass, passes, and nothing is stubbed any more. The last one was
+`_cbor_value_dup_string`, which no row in the suite reaches — it has its own differential
+test under `tests/port/` instead, run by `make test` against upstream's own archive.
 
 ## ABI
 
@@ -31,10 +32,10 @@ stubbed; nothing in the suite exercises it.
 |---|---|
 | Parse speed vs C | **1.04x slower** (mean p50, 8 files; 5 slower, 3 faster) |
 | Pretty-print vs C | 2x–32x faster, but see [methodology](../../bench/methodology.md) |
-| `unsafe` blocks | 74 (all in `cbor-ffi`) |
+| `unsafe` blocks | 75 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
 | Differential fuzz | 252,830 execs / 121s, **zero divergences** |
-| Decision log entries | 13 |
+| Decision log entries | 15 |
 
 ## Reading this honestly
 

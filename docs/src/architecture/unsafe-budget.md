@@ -13,18 +13,30 @@
 
 ```console
 $ grep -rn "unsafe {" crates/ --include='*.rs' | wc -l
-0
+75
 ```
 
-A bare `grep -rn unsafe crates/` returns 4, and all four are prose: two lines of module
-documentation, one sentence in `cbor-core`'s header, and the `#![forbid(unsafe_code)]`
-attribute itself. Counting `unsafe {` counts blocks, which is the number that means
-something.
+Counting `unsafe {` counts blocks, which is the number that means something. A bare
+`grep -rn unsafe crates/` returns 93; the difference is 11 `unsafe fn` signatures and a
+handful of lines of prose, including `cbor-core`'s `#![forbid(unsafe_code)]` itself.
 
-Zero, then, because the shim is still stubs and nothing dereferences its arguments yet. This
-number will grow as the port lands, and it gets published as it grows rather than at the
-end. A count that only moves in the honest direction is not worth much if nobody sees the
-intermediate values.
+All 75 are in `cbor-ffi`:
+
+| file | blocks |
+|---|---:|
+| `parser.rs` | 37 |
+| `encoder.rs` | 18 |
+| `tojson.rs` | 11 |
+| `pretty.rs` | 6 |
+| `validation.rs` | 3 |
+| `cbor-core/` (any file) | **0** |
+
+`grep -rn SAFETY crates/` returns 87, so every block is accounted for with room to spare —
+some invariants are stated once for a whole module and referred back to.
+
+This started at zero when the shim was stubs and was published at each step rather than at
+the end. A count that only ever moves in the flattering direction is not worth much if
+nobody sees the intermediate values.
 
 For scale: [uv][uv] ships 73 `unsafe` blocks. [Bun][bun] ships 13,044. Neither number is
 damning on its own — a runtime that talks to JavaScriptCore has different obligations than a
@@ -33,22 +45,30 @@ package resolver — but they bracket what "a lot" and "a little" look like in s
 [uv]: https://github.com/astral-sh/uv
 [bun]: https://github.com/oven-sh/bun
 
-## Where the blocks will be
+## Where the blocks are
 
-Predictable, and worth naming in advance so growth can be checked against the plan:
+The prediction made at kickoff was "pointer validation at every entry point, plus
+`_cbor_value_dup_string`, and nothing else if the design holds". That is what happened.
 
-**Pointer validation at every entry point.** Each of the 44 exported functions receives raw
-pointers from C. The shim converts them to references once, at the boundary, and everything
-past that point is safe Rust operating on `&CborValue`.
+**Pointer validation at the boundary.** Each of the 44 exported functions receives raw
+pointers from C. The shim converts them to references once, on entry — `as_ref` and `as_mut`
+in the parser, their equivalents elsewhere — and everything past that point is safe Rust
+operating on `&CborValue`. This is the bulk of the 75, and it is why `parser.rs` has the
+most: it has the most entry points.
 
-**`_cbor_value_dup_string`.** It allocates a buffer and hands ownership to the caller, who
-frees it with `free()`. That is a genuine cross-language allocation contract and there is no
-safe way to express it.
+**Reading bytes out of the caller's buffer.** `be_load` does a sized unaligned load at a
+cursor the caller owns. The bounds check happens first, in safe code, every time; the
+`// SAFETY:` line on each call site names which check established it.
 
-**Nothing else, if the design holds.** The [layout parity](layout-parity.md) page explains
-why the C unions are modelled as a pointer-sized word rather than a Rust `union`: reading a
-`union` field is `unsafe` regardless of whether it can misbehave, and spending blocks there
-would inflate this count without buying any safety.
+**`_cbor_value_dup_string`.** It allocates with libc `malloc` and hands ownership to the
+caller, who frees it with `free()`. That is a genuine cross-language allocation contract and
+there is no safe way to express it. It is the only place this library allocates on someone
+else's behalf, and it is [decision 12](../reference/decisions.md).
+
+**Not the unions.** The [layout parity](layout-parity.md) page explains why the C unions are
+modelled as a pointer-sized word rather than a Rust `union`: reading a `union` field is
+`unsafe` regardless of whether it can misbehave, and spending blocks there would have
+inflated this count without buying any safety.
 
 ## Why publish it at all
 

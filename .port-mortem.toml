@@ -30,10 +30,10 @@ abi_layout       = "asserted"
 
 [budget]
 # grep -rn "unsafe {" crates/ --include='*.rs' | wc -l — blocks, not mentions.
-unsafe_blocks = 74
+unsafe_blocks = 75
 fuzz_seconds  = 121
 divergences   = 0
-decisions     = 13
+decisions     = 15
 
 [bench]
 # bench/results.json, mean of rust_vs_c_p50 across the 8 corpus files.
