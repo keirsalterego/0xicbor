@@ -42,21 +42,23 @@ not a target.
 | **Original suite** | **4,929 / 4,929 — zero failures** |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **Differential fuzz** | **103,703 execs, 60s, zero divergences** |
+| **Differential fuzz** | **252,830 execs, 121s, zero divergences** |
 | **`unsafe` blocks** | **74**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
-| **Parsing speed** | **1.48x slower than C** (mean p50 over 8 corpus files) |
+| **Parsing speed** | **1.04x slower than C** (mean p50 over 8 corpus files) |
 
 Every test in Intel's suite that can apply to a port passes. `tst_cpp` is the exception and
 always was: it `#include`s upstream's `.c` files directly, so it tests C sources a Rust port
 does not have. That is 2 rows, which is why the total is 4,929 and not 4,931, and it has its
 own entry in [decisions.md](decisions.md) rather than being quietly dropped.
 
-**The port is slower at parsing than the C it replaces** — 1.18x to 1.83x across the corpus,
-mean 1.48x, with p99 tracking p50 so it is systematic rather than tail noise. Peak RSS runs
-11-68% higher and the static archive is far larger. It wins pretty-printing by 2x to 32x,
-but that is upstream calling `vfprintf` once per byte in `hexDump`, not decode speed, so it
-is not a headline worth claiming. Full numbers and method in
+**The port is still slower at parsing than the C it replaces**, on five of the eight corpus
+files — 0.87x to 1.22x, mean 1.04x. It was 1.49x until the byte source became a type
+parameter instead of a runtime flag test; what is left is concentrated in the deeply nested
+file. Startup costs 63 µs more, peak RSS runs 12-72% higher, and the static archive is far
+larger. It wins pretty-printing by 2x to 32x, but that is upstream calling `vfprintf` once
+per byte in `hexDump`, not decode speed, so it is not a headline worth claiming. Full
+numbers, the flag experiments behind the fix, and the method are in
 [bench/methodology.md](bench/methodology.md).
 
 For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 74

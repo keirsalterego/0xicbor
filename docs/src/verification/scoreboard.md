@@ -29,20 +29,22 @@ stubbed; nothing in the suite exercises it.
 
 | | |
 |---|---|
-| Parse speed vs C | **1.48x slower** (mean p50, 8 files) |
+| Parse speed vs C | **1.04x slower** (mean p50, 8 files; 5 slower, 3 faster) |
 | Pretty-print vs C | 2x–32x faster, but see [methodology](../../bench/methodology.md) |
 | `unsafe` blocks | 74 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
-| Differential fuzz | 103,703 execs / 60s, **zero divergences** |
-| Decision log entries | 12 |
+| Differential fuzz | 252,830 execs / 121s, **zero divergences** |
+| Decision log entries | 13 |
 
 ## Reading this honestly
 
 4,929/4,929 is every row that can apply to a port. It is not 4,931 because two rows test that
 upstream's C compiles as C++, which a Rust port cannot satisfy by construction.
 
-The number that matters more is the one below it: parsing is **1.48x slower than the C**. A
-100% pass rate and an honest regression is a more useful artifact than either alone.
+The number that matters more is the one below it: parsing is still **slower than the C** on
+five of eight corpus files. A 100% pass rate and an honest regression is a more useful
+artifact than either alone. It was 1.48x for a day, and the history table in the
+[methodology](../../bench/methodology.md) keeps that number rather than erasing it.
 
 If the port ends below 100%, the failing tests stay failing and each gets a paragraph in the
 [decision log](../reference/decisions.md). A reproducible 94% is worth more than a 100% that
