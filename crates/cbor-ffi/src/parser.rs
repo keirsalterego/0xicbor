@@ -36,7 +36,13 @@ pub(crate) const TYPE_BOOLEAN: u8 = 0xf5;
 pub(crate) const TYPE_INVALID: u8 = 0xff;
 
 // Major type numbers, after shifting.
+const MAJOR_UNSIGNED: u8 = 0;
 const MAJOR_NEGATIVE: u8 = 1;
+const MAJOR_BYTE_STRING: u8 = 2;
+const MAJOR_TEXT_STRING: u8 = 3;
+const MAJOR_ARRAY: u8 = 4;
+const MAJOR_MAP: u8 = 5;
+const MAJOR_TAG: u8 = 6;
 const MAJOR_SIMPLE: u8 = 7;
 
 // Simple-value slots inside major type 7.
@@ -216,7 +222,30 @@ trait Source {
         // SAFETY: bounds checked immediately above.
         Some(unsafe { Self::read(it, 1, need) })
     }
+
+    /// Where the cursor lands after skipping the item under it and everything
+    /// nested inside, or `None` to say "use the general path".
+    ///
+    /// `cbor_value_advance` walks the whole subtree and then throws all of it
+    /// away: the only things that survive are the final cursor and any error.
+    /// Decoding each item into the `CborValue` on the way past is therefore
+    /// wasted, and it is most of the cost -- 106 instructions per item on a
+    /// flat array of integers, where the walk itself needs about ten.
+    ///
+    /// So this reads heads and adds lengths, and hands back to the recursive
+    /// path the moment it meets anything it does not want to reason about:
+    /// indefinite lengths, malformed heads, a length that would not fit, or
+    /// nesting past [`FAST_SCAN_DEPTH`]. Every error the API can report is
+    /// still produced by the original code, which is what makes this safe to
+    /// bolt on -- it can only ever be right or absent.
+    fn scan_subtree(_it: &CborValue) -> Option<*mut c_void> {
+        None
+    }
 }
+
+/// How deep the fast scan follows nesting before giving up. Deeper documents
+/// take the recursive path, which is also where the 1024-level limit lives.
+const FAST_SCAN_DEPTH: usize = 64;
 
 /// A flat buffer: `CborValue::source` is the cursor and `CborParser::source` is
 /// one past the end.
@@ -255,6 +284,113 @@ impl Source for Buffer {
         *out = ptr(it) as *const c_void;
         Self::advance(it, len);
         NO_ERROR
+    }
+
+    // Kept out of line: the item stack below would otherwise land in the frame
+    // of whatever inlined it, and the caller is on the recursive path.
+    #[inline(never)]
+    fn scan_subtree(it: &CborValue) -> Option<*mut c_void> {
+        // Advancing over a tag stops on the tagged value rather than stepping
+        // past it, because a tag is a prefix and not an item. Inside a
+        // container the loop below gets that right for free by not settling a
+        // slot; at the top there is no loop to continue into, so leave it.
+        if it.type_ == TYPE_TAG {
+            return None;
+        }
+
+        let mut p = ptr(it) as usize;
+        let limit = end(it) as usize;
+
+        // One entry per open container, holding what its parent still owes.
+        // Nesting is not otherwise interesting here: skipping does not care
+        // about the shape, only about consuming the right number of items.
+        let mut stack = [0u64; FAST_SCAN_DEPTH];
+        let mut depth = 0usize;
+        let mut pending: u64 = 1;
+
+        loop {
+            while pending == 0 {
+                if depth == 0 {
+                    return Some(p as *mut c_void);
+                }
+                depth -= 1;
+                pending = stack[depth];
+            }
+
+            if p >= limit {
+                return None;
+            }
+            // SAFETY: `p < limit` was just checked, and both come from the
+            // buffer the parser was initialised with.
+            let head = unsafe { *(p as *const u8) };
+            let ai = head & SMALL_VALUE_MASK;
+
+            // Additional info 24..27 puts the value in the next 1, 2, 4 or 8
+            // bytes. Below 24 it is the head itself. 28..30 are illegal and 31
+            // is indefinite; both are the general path's problem.
+            let (width, value) = if ai < VALUE_8BIT {
+                (0usize, ai as u64)
+            } else if ai <= VALUE_64BIT {
+                let n = bytes_needed(ai);
+                if limit - p < 1 + n {
+                    return None;
+                }
+                // SAFETY: bounds checked immediately above.
+                (n, unsafe { be_load((p + 1) as *const u8, n) })
+            } else {
+                return None;
+            };
+            p += 1 + width;
+
+            match head >> MAJOR_TYPE_SHIFT {
+                MAJOR_UNSIGNED | MAJOR_NEGATIVE => pending -= 1,
+
+                MAJOR_BYTE_STRING | MAJOR_TEXT_STRING => {
+                    if value > usize::MAX as u64 {
+                        return None;
+                    }
+                    let after = p.checked_add(value as usize)?;
+                    if after > limit {
+                        return None;
+                    }
+                    p = after;
+                    pending -= 1;
+                }
+
+                MAJOR_ARRAY | MAJOR_MAP => {
+                    let is_map = head >> MAJOR_TYPE_SHIFT == MAJOR_MAP;
+                    // The same two rejections `enter_container` makes, so a
+                    // length it would call too large is never quietly skipped.
+                    if value >= u32::MAX as u64 || (is_map && value > (u32::MAX / 2) as u64) {
+                        return None;
+                    }
+                    pending -= 1;
+                    let children = if is_map { value * 2 } else { value };
+                    if children != 0 {
+                        if depth == FAST_SCAN_DEPTH {
+                            return None;
+                        }
+                        stack[depth] = pending;
+                        depth += 1;
+                        pending = children;
+                    }
+                }
+
+                // A tag prefixes the item after it rather than being one, so
+                // it settles no debt. This is why `preparse_next_value` leaves
+                // `remaining` alone for tags.
+                MAJOR_TAG => {}
+
+                // Major 7. A simple value below 32 written in two bytes is
+                // overlong, which `preparse_value` rejects.
+                _ => {
+                    if ai == SIMPLE_TYPE_IN_NEXT_BYTE && value < 32 {
+                        return None;
+                    }
+                    pending -= 1;
+                }
+            }
+        }
     }
 }
 
@@ -1213,6 +1349,12 @@ unsafe fn map_find_value<S: Source>(
 fn advance<S: Source>(it: &mut CborValue) -> c_int {
     if it.remaining == 0 {
         return ERR_ADVANCE_PAST_EOF;
+    }
+    // Only here, not inside `advance_recursive`. A scan that gives up has to
+    // be paid for once, not once per level on the way back down.
+    if let Some(after) = S::scan_subtree(it) {
+        it.source.0 = after;
+        return preparse_next_value::<S>(it);
     }
     advance_recursive::<S>(it, MAX_RECURSIONS)
 }
