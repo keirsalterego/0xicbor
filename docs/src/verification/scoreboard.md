@@ -30,7 +30,7 @@ differential test under `tests/port/` instead, run by `make test` against upstre
 
 | | |
 |---|---|
-| Parse speed vs C | **1.01x slower** (mean p50, 8 files; 4 slower, 4 faster) |
+| Parse speed vs C | **0.98x** (mean p50, 8 files; 5 faster, 3 slower) |
 | Pretty-print vs C | 2x–32x faster, but see [methodology](../../bench/methodology.md) |
 | `unsafe` blocks | 75 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
@@ -42,11 +42,11 @@ differential test under `tests/port/` instead, run by `make test` against upstre
 4,929/4,929 is every row that can apply to a port. It is not 4,931 because two rows test that
 upstream's C compiles as C++, which a Rust port cannot satisfy by construction.
 
-The number under it is the one to read carefully: parsing is **slower than the C on four of
-eight corpus files and faster on the other four**. It was 1.48x on all eight for a day, and
-the history table in the [methodology](../../bench/methodology.md) keeps that number rather
-than erasing it. What is left correlates with nesting depth and not with instruction count,
-which is documented rather than tuned away.
+The number under it is the one to read carefully: parsing is **faster than the C on five of
+eight corpus files and slower on three**. It was 1.48x slower on all eight for a day, and the
+history table in the [methodology](../../bench/methodology.md) keeps that number rather than
+erasing it. What is left correlates with nesting depth and not with instruction count, which
+is documented rather than tuned away.
 
 If the port ends below 100%, the failing tests stay failing and each gets a paragraph in the
 [decision log](../reference/decisions.md). A reproducible 94% is worth more than a 100% that

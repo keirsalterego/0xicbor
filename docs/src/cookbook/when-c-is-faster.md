@@ -116,7 +116,8 @@ macro_rules! dispatch {
 
 The `Buffer` instantiation now contains no branch and no indirect call anywhere in it.
 Mean ratio 1.492 to 1.038, three of eight files faster than C, for 4,128 bytes of
-extra `.text`.
+extra `.text`. Two later rounds took it to 0.984 and five of eight; they are at the
+end of this chapter.
 
 Note what did *not* change: the flag still lives in `CborParser::flags`, at the offset
 the C header specifies, set by the same function that always set it. The ABI cannot
@@ -139,6 +140,62 @@ out-parameter stayed, and the reasoning is
 [decision 14](../reference/decisions.md) so that nobody, including me in a week,
 tidies it back.
 
+## Round two: read the generated code, then the profile
+
+Mean 1.038 was better than 1.492 and still not a win. Two more rounds got it to
+0.984, and neither came from having another idea. Both came from looking.
+
+**The disassembly.** `advance_recursive` opened with the obvious spelling:
+
+```rust
+if is_fixed_type(it.type_) { return advance_internal::<S>(it); }
+if !is_container(it.type_) { /* string */ }
+```
+
+LLVM compiled `is_fixed_type` into a rotate and a bit-table lookup against a
+constant. Thirteen instructions and three branches, before any work, in a function
+that runs 504,000 times on the nesting corpus. GCC compiled the same logic into
+three instructions and one branch, because it noticed what I had not: the classes
+being tested are each a *pair* of major types differing only in bit 5. Byte string
+is 0x40 and text is 0x60; array is 0x80 and map is 0xa0. Mask that bit off and each
+pair collapses to one comparison.
+
+```rust
+match it.type_ & !MAJOR_PAIR_BIT {
+    TYPE_BYTE_STRING => …,   // both string types
+    TYPE_ARRAY => …,         // both container types
+    _ => return advance_internal::<S>(it),
+}
+```
+
+Five instructions, two branches. The clearer source was the slower one, and the
+faster one is arguably clearer once the comment explains the bit.
+
+While in there: the string branch sets up a six-argument call, and every register
+that call needs is one `advance_recursive` must push on entry and pop on exit. On a
+function that recurses once per nesting level, a branch taken only at the leaves was
+charging its register pressure to the whole descent. Behind `#[inline(never)]` the
+frame went from 48 bytes to 32.
+
+**The profile.** callgrind on the map-heavy corpus put 44% of parse time in
+`iterate_string_chunks`, where we ran 16.4 M instructions to the C's 13.6 M. The C
+symbol was named `iterate_string_chunks.constprop.0`.
+
+That suffix again. The walker takes what-to-do-with-each-chunk as an argument, so
+the branch lives inside the chunk loop, and GCC had cloned it per call site. Exactly
+the same mistake as the byte source, one level down, and it had been sitting there
+the whole time. Three types implementing one `Op` trait, and the choice moves to the
+call site.
+
+That last one took the mean under 1.0.
+
+| | mean | files faster than C |
+|---|---:|---:|
+| before any of this | 1.492 | 0 of 8 |
+| monomorphise the source | 1.038 | 3 of 8 |
+| fix the dispatch, outline the string branch | 1.014 | 4 of 8 |
+| monomorphise the chunk operation | **0.984** | **5 of 8** |
+
 ## What to take from this
 
 - Delete the suspect before optimising it. A build you throw away answers *where* in
@@ -150,6 +207,12 @@ tidies it back.
   fit the shape of the code. The answer is often a specific, nameable transformation
   rather than "C is closer to the metal".
 - Idiomatic is a prior, not a proof. Measure the idiomatic version too.
+- Once you have found one instance of a pattern, grep for the rest of it. The chunk
+  walker had the identical defect as the byte source and survived two more rounds of
+  tuning because I was looking at the thing I had just changed.
+- Read the disassembly of the function you think is hot. Not to hand-optimise it, but
+  because the compiler will show you which of your source constructs it did not like,
+  and that is a much shorter list than the things you could try.
 
 And publish the regression while it is still a regression. This port shipped a 1.48x
 number in its README for a day. That is what made it worth fixing.

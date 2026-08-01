@@ -44,19 +44,20 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 | **Differential fuzz** | **1,507,421 execs, 901s, zero divergences** (one find, fixed) |
 | **`unsafe` blocks** | **75**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
-| **Parsing speed** | **1.01x slower than C** (mean p50; 4 of 8 files faster) |
+| **Parsing speed** | **0.98x of C** (mean p50; faster on 5 of 8 corpus files) |
 
 Every test in Intel's suite that can apply to a port passes. `tst_cpp` is the exception and
 always was: it `#include`s upstream's `.c` files directly, so it tests C sources a Rust port
 does not have. That is 2 rows, which is why the total is 4,929 and not 4,931, and it has its
 own entry in [decisions.md](decisions.md) rather than being quietly dropped.
 
-**Parsing is a draw**: slower on four of the eight corpus files, faster on the other four,
-0.84x to 1.23x, mean 1.014. It was 1.49x until the byte source stopped being a runtime flag
-test. What is left is nesting depth alone: this port is faster than the C on shallow
-documents and loses ground as chains get deeper, and at depth 80 it runs 0.83% more
-instructions for 23% more wall clock, so it is stalls rather than work. Startup costs 69 µs
-more, peak RSS runs 24-68% higher, and the static archive is far larger. It wins
+**Parsing now edges out the C**: faster on five of the eight corpus files, slower on three,
+0.82x to 1.19x, mean 0.984. It was 1.49x on all eight until two runtime branches became type
+parameters, which is what GCC was already doing for the C with `-fipa-cp-clone`. What is
+left is nesting depth: this port is well ahead on shallow documents and loses ground as
+chains get deeper, and at depth 80 it runs 0.83% more instructions for 23% more wall clock,
+so it is stalls rather than work. Startup still costs 77 µs more, peak RSS runs 18-69%
+higher, and the static archive is far larger. It wins
 pretty-printing by 2x to 32x, but that is upstream calling `vfprintf` once per byte in
 `hexDump`, not decode speed, so it is not a headline worth claiming. Full
 numbers, the flag experiments behind the fix, and the method are in

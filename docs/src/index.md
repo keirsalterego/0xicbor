@@ -39,15 +39,15 @@ These are the real numbers from `make test`, not a target.
 | ABI layout | asserted against C-dumped offsets, passing |
 | `unsafe` blocks | **75**, all in the shim |
 | Differential fuzz | **1,507,421 execs, zero divergences** |
-| Parse speed | **1.01x slower than C** (mean p50; 4 of 8 files faster) |
+| Parse speed | **0.98x of C** (mean p50; faster on 5 of 8 files) |
 
 Every row that can apply to a port passes. The two that cannot are `tst_cpp`, which
 `#include`s upstream's `.c` files and therefore tests C sources this port does not have.
 
-Parsing is a draw: faster than the C on four of the eight corpus files, slower on the other
-four, and that is published as prominently as the pass rate. See the
-[scoreboard](verification/scoreboard.md). It was 1.48x on all eight until the byte source
-stopped being a runtime flag test; the old figure is kept in the benchmark's history table
+Parsing edges out the C on average: faster on five of the eight corpus files, slower on
+three, and where it loses is published as prominently as the pass rate. See the
+[scoreboard](verification/scoreboard.md). It was 1.48x slower on all eight until two runtime
+branches became type parameters; the old figure is kept in the benchmark's history table
 rather than quietly replaced.
 
 ## Where to start
