@@ -172,3 +172,36 @@ built from entirely different source is the evidence.
 
 `cbor-core`, which is the whole CBOR implementation, has no `extern` blocks at all and is
 `#![no_std]`.
+
+## 13. The byte source is a type parameter, not a flag test
+
+Upstream reads `parser->flags & CborParserFlag_ExternalSource` inside each of the four
+source operations — `can_read_bytes`, `read_bytes`, `advance_bytes`, `transfer_string` —
+so the test runs on the head of every item. Transliterating that cost 1.49x against the C
+on an eight-file corpus, and it was almost the whole gap: hardcoding the branch to the
+buffer case took `map_heavy` from 1.83x to 1.10x.
+
+The interesting part is why the same code is not slow in C. GCC at `-O3` runs
+`-fipa-cp-clone`, which clones a function specialised on a constant argument and folds the
+branch out of the clone. Building upstream with `-fno-ipa-cp-clone` and changing nothing
+else costs it 17%. `-fno-strict-aliasing`, which was my first guess, costs it nothing
+measurable (0.994x) — so this is not a TBAA story, it is a specialisation story.
+
+rustc has no equivalent and will not grow one: it does not speculate on runtime values.
+What it does have is monomorphisation, which is the same transformation with the decision
+moved from the optimiser to the type system. So the four operations became a `Source`
+trait with a `Buffer` and a `Reader` impl, the parser internals take `S: Source`, and each
+`#[no_mangle]` entry point picks an instantiation once. The buffer instantiation contains
+no branch and no indirect call anywhere in it.
+
+The ABI is untouched: the flag still lives in `CborParser::flags` exactly where the header
+says, and `cbor_parser_init_reader` still sets it. It is read once per API call now instead
+of once per byte read.
+
+Cost: two copies of the parser, which measured 4,128 bytes of `.text` on the benchmark
+driver — 0.6%. Mean ratio went 1.492 to 1.033, and three of the eight corpus files are now
+faster than the C.
+
+The alternative was threading a `bool` down by hand, which is the same specialisation
+written out longhand and would have doubled the argument list of every internal function
+without the compiler checking that no call site got it wrong.
