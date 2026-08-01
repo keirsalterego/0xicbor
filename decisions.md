@@ -137,7 +137,7 @@ Worth noting because it dates any guide written against tinycbor. There are no `
 at `9441b2ca`; the suite is `CMakeLists.txt` throughout. The port targets the current tree,
 not the qmake-era one.
 
-## 12. The only C symbol we call is libc's `fwrite`
+## 12. The only C symbols we call are libc's `fwrite`, `malloc` and `free`
 
 The rule is no source-language runtime: a C-to-Rust port must not FFI back into the
 library it replaces. This port does not. `cargo tree` is two crates and nothing else, there
@@ -145,7 +145,8 @@ is no `build.rs`, no `cc`, no `bindgen`, and `libtinycbor.a` is compiled entirel
 The differential fuzz oracle is upstream's C built as a standalone binary and driven as a
 subprocess over a pipe.
 
-There is exactly one `extern "C"` declaration in the tree:
+There are exactly two `extern "C"` blocks in the tree, both libc, both forced by the ABI
+rather than chosen.
 
 ```rust
 extern "C" {
@@ -153,8 +154,7 @@ extern "C" {
 }
 ```
 
-That is libc, not tinycbor, and it is forced by the ABI rather than chosen. The signature we
-have to implement is:
+The signature we have to implement is:
 
 ```c
 CborError cbor_value_to_pretty_advance(FILE *out, CborValue *value);
@@ -163,6 +163,18 @@ CborError cbor_value_to_pretty_advance(FILE *out, CborValue *value);
 `FILE` is an opaque libc type owned by libc. A caller hands us one it opened, and the only
 way to write to it is to call libc. Going through `fileno()` and `write()` would still be
 libc, just less direct.
+
+```rust
+extern "C" {
+    fn malloc(size: usize) -> *mut c_void;
+    fn free(ptr: *mut c_void);
+}
+```
+
+`_cbor_value_dup_string` hands the caller a block and the documentation says to release it
+with `free()`. That names the allocator. Returning a pointer from Rust's global allocator
+would be a heap mismatch the moment anyone honoured the contract — it happens to be malloc
+on this target today, and Rust promises nothing about that continuing to be true.
 
 This is not a loophole, because it does not get us anything. Rust's `std` links libc on
 Linux in every program ever compiled; if the rule barred that, no Rust port could exist on
@@ -227,3 +239,18 @@ already forcing.
 Recorded because "make it idiomatic" is the default advice for a port, and this is a place
 where taking it made the thing measurably worse. One measurement of a rejected variant, not
 a published headline.
+
+## 15. `cc` appears under the fuzz crate, and nowhere else
+
+Worth writing down before someone finds it and assumes the worst. `fuzz/Cargo.toml` depends
+on `libfuzzer-sys`, which builds libFuzzer's own C++ runtime and therefore pulls `cc` into
+*that* crate's build-dependencies. It is confined to the fuzzing binary, which is a test
+harness and is never shipped.
+
+The artifact under judgement is `target/release/libtinycbor.a`. `cargo tree` at the
+workspace root is two crates — `cbor-core` and `cbor-ffi` — with no build script and no `cc`
+anywhere in it, and `fuzz/` is deliberately not a workspace member. The C oracle the fuzzer
+compares against is a separate executable driven over a pipe, per entry 5.
+
+So: no C in the library, and the one place a C compiler runs at all is the tool that proves
+the library matches C.
