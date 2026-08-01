@@ -1,9 +1,8 @@
 //! The C ABI shim: exports the 44 symbols that make up `libtinycbor.a`.
 //!
-//! The encoder lives in `encoder`, the parser in `parser`. What is left here is
-//! the handful of entry points that are still scaffolding, each returning
-//! `CborErrorInternalError` so the Qt suite runs to completion and reports a
-//! real per-row failure count instead of dying on the first call.
+//! The encoder lives in `encoder`, the parser in `parser`, diagnostic notation
+//! in `pretty`, JSON in `tojson` and the strictness checks in `validation`.
+//! What is left here is the one entry point that belongs to none of them.
 //!
 //! Deliberately not `no_std`, unlike cbor-core. This crate only ever links into
 //! a hosted C program, and leaning on std here supplies the allocator and the
@@ -19,41 +18,7 @@ mod validation;
 
 pub use types::{CborEncoder, CborParser, CborValue};
 
-use core::ffi::{c_char, c_int, c_void};
-
-/// The C `CborError` value returned while a function is still a stub.
-///
-/// `CborErrorInternalError` is `INT_MAX` upstream. Nothing in the suite expects
-/// it, so every row that touches an unfinished path fails loudly rather than
-/// coincidentally passing.
-const STUB: c_int = c_int::MAX;
-
-/// Declares an `extern "C"` stub that returns [`STUB`].
-///
-/// The argument lists are spelled out even though the bodies ignore them: the
-/// symbol name is what the linker matches, but the parameter types are what the
-/// signature keeps once the body is real, so each function gets filled in rather
-/// than rewritten.
-macro_rules! stub {
-    ($( $name:ident ( $($arg:ident : $ty:ty),* $(,)? ); )*) => {$(
-        #[no_mangle]
-        pub extern "C" fn $name($($arg: $ty),*) -> c_int {
-            $( let _ = $arg; )*
-            STUB
-        }
-    )*};
-}
-
-// -- not yet ported --------------------------------------------------------
-
-stub! {
-    // Allocates and hands ownership to the caller, who frees it with free().
-    // That cross-language allocation contract is the one place the unsafe
-    // budget is expected to grow for a reason other than pointer validation.
-    _cbor_value_dup_string(value: *const CborValue, buffer: *mut *mut c_void, buflen: *mut usize, next: *mut CborValue);
-
-
-}
+use core::ffi::{c_char, c_int};
 
 /// Static storage, so the caller can hold the pointer indefinitely — which is
 /// what upstream promises and what callers assume.

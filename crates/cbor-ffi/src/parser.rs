@@ -987,6 +987,62 @@ pub extern "C" fn _cbor_value_copy_string(
     }
 }
 
+// The one place this library allocates on the caller's behalf.
+//
+// The documented contract is that `*buffer` comes back owned by the caller and
+// is released with `free()`. That names the allocator, so it has to be libc's:
+// handing back a pointer from Rust's allocator would be a heap mismatch the
+// moment anyone honoured the contract, and Rust makes no promise that its
+// global allocator is malloc even where it happens to be today.
+extern "C" {
+    fn malloc(size: usize) -> *mut c_void;
+    fn free(ptr: *mut c_void);
+}
+
+#[no_mangle]
+pub extern "C" fn _cbor_value_dup_string(
+    value: *const CborValue,
+    buffer: *mut *mut c_void,
+    buflen: *mut usize,
+    next: *mut CborValue,
+) -> c_int {
+    // SAFETY: module contract, plus writable `buffer` and `buflen`, which
+    // upstream asserts are non-NULL rather than checking.
+    unsafe {
+        // Callers routinely pass the same cursor as `value` and `next`, so read
+        // it before the first pass writes through `next`.
+        let it = clone(as_ref(value));
+
+        // First pass measures. SIZE_MAX capacity means nothing is ever copied
+        // and nothing can fail to fit, so this only walks the chunks.
+        *buflen = usize::MAX;
+        let err = _cbor_value_copy_string(&it, core::ptr::null_mut(), buflen, next);
+        if err != NO_ERROR {
+            return err;
+        }
+
+        // One byte beyond the content, which is what makes the copy pass write
+        // the NUL. Never zero, so `malloc(0)` is not a case to think about.
+        *buflen += 1;
+        let tmp = malloc(*buflen);
+        if tmp.is_null() {
+            // *buflen keeps the size that would have been needed, which is what
+            // the documentation promises for this one error.
+            return ERR_OUT_OF_MEMORY;
+        }
+
+        let err = _cbor_value_copy_string(&it, tmp, buflen, next);
+        if err != NO_ERROR {
+            // Cannot happen: the walk above already succeeded over the same
+            // bytes. Freeing rather than leaking on the impossible path anyway.
+            free(tmp);
+            return err;
+        }
+        *buffer = tmp;
+        NO_ERROR
+    }
+}
+
 /// Compares without copying: the expected string is walked in place as the
 /// chunks arrive, so a mismatch costs nothing extra.
 #[no_mangle]
