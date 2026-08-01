@@ -1037,6 +1037,11 @@ impl Op for CompareTo {
 /// A NUL is written only when there is room *beyond* the content (`buflen >
 /// total`, strictly). For `Compare` that NUL check is what stops a prefix from
 /// comparing equal to a longer expected string.
+///
+/// Every exit goes through [`hand_back`], including the failures. Upstream
+/// copies the cursor into `next` before it starts walking and works on that, so
+/// a caller whose walk fails still sees how far it got; walking a local copy
+/// here means the write-back has to be spelled out.
 fn iterate_string_chunks<S: Source, O: Op>(
     value: &CborValue,
     buffer: *mut u8,
@@ -1050,7 +1055,7 @@ fn iterate_string_chunks<S: Source, O: Op>(
 
     let err = begin_string_iteration::<S>(&mut cursor);
     if err != NO_ERROR {
-        return err;
+        return hand_back(&cursor, next, err);
     }
 
     loop {
@@ -1061,11 +1066,11 @@ fn iterate_string_chunks<S: Source, O: Op>(
             break;
         }
         if err != NO_ERROR {
-            return err;
+            return hand_back(&cursor, next, err);
         }
 
         let Some(new_total) = total.checked_add(chunk_len) else {
-            return ERR_DATA_TOO_LARGE;
+            return hand_back(&cursor, next, ERR_DATA_TOO_LARGE);
         };
 
         if *result && *buflen >= new_total {
@@ -1085,10 +1090,17 @@ fn iterate_string_chunks<S: Source, O: Op>(
     *buflen = total;
 
     let err = finish_string_iteration::<S>(&mut cursor);
+    hand_back(&cursor, next, err)
+}
+
+/// Leaves the walk's cursor in `next`, if the caller wanted one, and returns
+/// the error unchanged.
+///
+/// SAFETY: module contract. `next` frequently aliases `value`, which is why the
+/// walk runs on a copy and only lands here.
+fn hand_back(cursor: &CborValue, next: Option<*mut CborValue>, err: c_int) -> c_int {
     if let Some(n) = next {
-        // SAFETY: module contract. `next` frequently aliases `value`, which is
-        // why the walk ran on a copy.
-        unsafe { *n = cursor };
+        unsafe { *n = clone(cursor) };
     }
     err
 }
