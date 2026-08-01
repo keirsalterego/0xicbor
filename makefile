@@ -16,7 +16,9 @@ PKG_CONFIG ?= pkg-config
 BUILD   := build
 LIB     := target/release/libtinycbor.a
 ORIG    := tests/original
+PORT    := tests/port
 INCLUDE := crates/cbor-ffi/include
+REF     := bench/reference/libtinycbor-upstream.a
 
 QT_CFLAGS := $(shell $(PKG_CONFIG) --cflags Qt6Test)
 QT_LIBS   := $(shell $(PKG_CONFIG) --libs Qt6Test)
@@ -27,7 +29,7 @@ CXXFLAGS := -std=c++20 -O2 -I$(INCLUDE) $(QT_CFLAGS)
 # directly, so it tests C sources we do not have. See decisions.md.
 QTESTS := encoder parser tojson
 
-.PHONY: all lib test clean fmt lint symbols
+.PHONY: all lib test test-port clean fmt lint symbols
 
 all: lib $(QTESTS:%=$(BUILD)/tst_%) $(BUILD)/tst_c90
 
@@ -50,7 +52,29 @@ $(BUILD)/tst_c90: $(ORIG)/c90/tst_c90.c $(LIB)
 	@mkdir -p $(BUILD)
 	$(CC) -std=c90 -pedantic -Wall -I$(INCLUDE) $< -o $@ $(LIB) -lm
 
-test: all
+# The one entry point upstream's suite never calls, so it gets a test of ours.
+# The same source is built twice, once against each archive, and the two
+# transcripts are diffed -- so there is no expected-output file to drift.
+$(BUILD)/tst_dup_string-rust: $(PORT)/tst_dup_string.c $(LIB)
+	@mkdir -p $(BUILD)
+	$(CC) -std=c99 -Wall -Wextra -I$(INCLUDE) $< -o $@ $(LIB) -lm -lpthread -ldl
+
+$(BUILD)/tst_dup_string-c: $(PORT)/tst_dup_string.c $(REF)
+	@mkdir -p $(BUILD)
+	$(CC) -std=c99 -Wall -Wextra -I$(INCLUDE) $< -o $@ $(REF) -lm
+
+test-port: $(BUILD)/tst_dup_string-rust $(BUILD)/tst_dup_string-c
+	@echo "== port tests: same source, both archives, transcripts diffed =="
+	@$(BUILD)/tst_dup_string-c    > $(BUILD)/dup_string-c.out
+	@$(BUILD)/tst_dup_string-rust > $(BUILD)/dup_string-rust.out
+	@if diff -u $(BUILD)/dup_string-c.out $(BUILD)/dup_string-rust.out; then \
+	  printf '  %-12s %5s cases  %5s differ\n' 'dup_string' \
+	    "$$(wc -l < $(BUILD)/dup_string-rust.out)" 0; \
+	else \
+	  echo "  dup_string: DIVERGES FROM UPSTREAM"; exit 1; \
+	fi
+
+test: all test-port
 	@echo "== original suite, linked against the Rust libtinycbor.a =="
 	@total_pass=0; total_fail=0; \
 	for t in $(QTESTS); do \
