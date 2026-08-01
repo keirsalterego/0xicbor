@@ -63,7 +63,20 @@ $(BUILD)/tst_dup_string-c: $(PORT)/tst_dup_string.c $(REF)
 	@mkdir -p $(BUILD)
 	$(CC) -std=c99 -Wall -Wextra -I$(INCLUDE) $< -o $@ $(REF) -lm
 
-test-port: $(BUILD)/tst_dup_string-rust $(BUILD)/tst_dup_string-c
+# Inputs the differential fuzzer found, replayed on every run so they stay
+# found without waiting for libFuzzer to rediscover them.
+CORPUS := $(wildcard $(PORT)/corpus/*.cbor)
+
+$(BUILD)/tst_pretty_diff-rust: $(PORT)/tst_pretty_diff.c $(LIB)
+	@mkdir -p $(BUILD)
+	$(CC) -std=gnu99 -Wall -Wextra -I$(INCLUDE) $< -o $@ $(LIB) -lm -lpthread -ldl
+
+$(BUILD)/tst_pretty_diff-c: $(PORT)/tst_pretty_diff.c $(REF)
+	@mkdir -p $(BUILD)
+	$(CC) -std=gnu99 -Wall -Wextra -I$(INCLUDE) $< -o $@ $(REF) -lm
+
+test-port: $(BUILD)/tst_dup_string-rust $(BUILD)/tst_dup_string-c \
+           $(BUILD)/tst_pretty_diff-rust $(BUILD)/tst_pretty_diff-c
 	@echo "== port tests: same source, both archives, transcripts diffed =="
 	@$(BUILD)/tst_dup_string-c    > $(BUILD)/dup_string-c.out
 	@$(BUILD)/tst_dup_string-rust > $(BUILD)/dup_string-rust.out
@@ -72,6 +85,14 @@ test-port: $(BUILD)/tst_dup_string-rust $(BUILD)/tst_dup_string-c
 	    "$$(wc -l < $(BUILD)/dup_string-rust.out)" 0; \
 	else \
 	  echo "  dup_string: DIVERGES FROM UPSTREAM"; exit 1; \
+	fi
+	@$(BUILD)/tst_pretty_diff-c    $(CORPUS) > $(BUILD)/pretty_diff-c.out
+	@$(BUILD)/tst_pretty_diff-rust $(CORPUS) > $(BUILD)/pretty_diff-rust.out
+	@if diff -u $(BUILD)/pretty_diff-c.out $(BUILD)/pretty_diff-rust.out; then \
+	  printf '  %-12s %5s cases  %5s differ\n' 'pretty_diff' \
+	    "$$(wc -l < $(BUILD)/pretty_diff-rust.out)" 0; \
+	else \
+	  echo "  pretty_diff: DIVERGES FROM UPSTREAM"; exit 1; \
 	fi
 
 test: all test-port
