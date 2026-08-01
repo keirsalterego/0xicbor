@@ -22,6 +22,7 @@
 # Verification
 
 - [Running the original suite](verification/original-suite.md)
+- [Differential fuzzing](verification/differential-fuzzing.md)
 - [Scoreboard](verification/scoreboard.md)
 
 # Reference
