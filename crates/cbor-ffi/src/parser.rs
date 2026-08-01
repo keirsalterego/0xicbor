@@ -84,8 +84,7 @@ unsafe fn as_ref<'a>(p: *const CborValue) -> &'a CborValue {
 /// The callback table a caller supplies to `cbor_parser_init_reader`.
 ///
 /// With an external source there is no buffer to point into: the cursor is an
-/// opaque token and every read goes through these. That is why the accessors
-/// below dispatch rather than doing pointer arithmetic.
+/// opaque token and every read goes through these.
 #[repr(C)]
 pub struct CborParserOperations {
     pub can_read_bytes: extern "C" fn(*mut c_void, usize) -> bool,
@@ -127,43 +126,187 @@ fn ptr(it: &CborValue) -> *const u8 {
     it.source.0 as *const u8
 }
 
-#[inline(always)]
-fn can_read(it: &CborValue, len: usize) -> bool {
-    if external(it) {
-        return (ops(it).can_read_bytes)(it.source.0, len);
+/// Where the bytes come from.
+///
+/// Upstream tests `parser->flags & ExternalSource` inside each of these four
+/// operations, so the test runs on the head of every item. GCC at `-O3` clones
+/// the callers and folds the branch away — that is `-fipa-cp-clone`, and
+/// switching it off costs upstream 17%. rustc has no equivalent: it will not
+/// specialise a function on a runtime flag, so the branch survives, and with it
+/// a call the optimiser has to assume clobbers the cursor.
+///
+/// Making the source a type rather than a flag does the same job at the
+/// language level. Each entry point picks an instantiation once, and the buffer
+/// one contains no branch and no indirect call anywhere in it. The flag still
+/// lives where C expects it — the ABI is unchanged; it is just read once per
+/// call instead of once per read.
+trait Source {
+    fn can_read(it: &CborValue, len: usize) -> bool;
+
+    /// Reads `len` big-endian bytes at `offset` from the cursor.
+    ///
+    /// SAFETY: callers must have established `can_read(it, offset + len)`.
+    unsafe fn read(it: &CborValue, offset: usize, len: usize) -> u64;
+
+    fn advance(it: &mut CborValue, n: usize);
+
+    /// Points `out` at `len` bytes of string content starting `offset` ahead,
+    /// and steps the cursor past them. An external source may materialise the
+    /// bytes itself, which is why it gets to answer this rather than us
+    /// computing it.
+    fn transfer_string(
+        it: &mut CborValue,
+        out: &mut *const c_void,
+        offset: usize,
+        len: usize,
+    ) -> c_int;
+
+    #[inline(always)]
+    fn read_byte(it: &CborValue) -> Option<u8> {
+        if !Self::can_read(it, 1) {
+            return None;
+        }
+        // SAFETY: just bounds-checked.
+        Some(unsafe { Self::read(it, 0, 1) } as u8)
     }
-    (end(it) as usize).saturating_sub(ptr(it) as usize) >= len
+
+    /// The value carried in the head, reading past `extra` when it did not fit.
+    #[inline(always)]
+    fn int64(it: &CborValue) -> u64 {
+        if it.flags & F_TOO_LARGE != 0 {
+            Self::wide_int64(it)
+        } else {
+            it.extra as u64
+        }
+    }
+
+    #[inline(always)]
+    fn wide_int64(it: &CborValue) -> u64 {
+        // SAFETY: preparse only sets these flags after checking the bytes are
+        // there.
+        unsafe {
+            if it.flags & F_IS_64BIT != 0 {
+                Self::read(it, 1, 8)
+            } else {
+                Self::read(it, 1, 4)
+            }
+        }
+    }
+
+    /// Decodes the number in the head byte at the cursor, reading it fresh from
+    /// the source rather than from `extra`.
+    ///
+    /// The cached fields describe whatever was last preparsed. During
+    /// string-chunk iteration the cursor sits on a chunk head that was never
+    /// preparsed, so the cached value belongs to the enclosing string and is the
+    /// wrong answer.
+    fn number_at_cursor(it: &CborValue) -> Option<u64> {
+        let head = Self::read_byte(it)?;
+        let descriptor = head & SMALL_VALUE_MASK;
+        if descriptor < VALUE_8BIT {
+            return Some(descriptor as u64);
+        }
+        if descriptor > VALUE_64BIT {
+            return None;
+        }
+        let need = bytes_needed(descriptor);
+        if !Self::can_read(it, 1 + need) {
+            return None;
+        }
+        // SAFETY: bounds checked immediately above.
+        Some(unsafe { Self::read(it, 1, need) })
+    }
 }
 
-/// Reads `len` big-endian bytes at `offset` from the cursor.
-///
-/// The buffer case is written out separately rather than sharing a tail with
-/// the callback case. Sharing meant a `[u8; 8]` landed on the stack and the
-/// bytes went through a pointer the optimiser could not see through, on a path
-/// that runs for every head byte of every item. Splitting it keeps the common
-/// case a plain load.
-///
-/// SAFETY: callers must have established `can_read(it, offset + len)` first;
-/// every call site below does.
-#[inline(always)]
-unsafe fn read_unchecked(it: &CborValue, offset: usize, len: usize) -> u64 {
-    if !external(it) {
-        return be_load(ptr(it).add(offset), len);
+/// A flat buffer: `CborValue::source` is the cursor and `CborParser::source` is
+/// one past the end.
+struct Buffer;
+
+/// A caller-supplied reader: `CborValue::source` is an opaque token and
+/// `CborParser::source` is the operations table.
+struct Reader;
+
+impl Source for Buffer {
+    #[inline(always)]
+    fn can_read(it: &CborValue, len: usize) -> bool {
+        (end(it) as usize).saturating_sub(ptr(it) as usize) >= len
     }
-    read_external(it, offset, len)
+
+    #[inline(always)]
+    unsafe fn read(it: &CborValue, offset: usize, len: usize) -> u64 {
+        be_load(ptr(it).add(offset), len)
+    }
+
+    #[inline(always)]
+    fn advance(it: &mut CborValue, n: usize) {
+        it.source.0 = (it.source.0 as usize).wrapping_add(n) as *mut c_void;
+    }
+
+    fn transfer_string(
+        it: &mut CborValue,
+        out: &mut *const c_void,
+        offset: usize,
+        len: usize,
+    ) -> c_int {
+        Self::advance(it, offset);
+        if !Self::can_read(it, len) {
+            return ERR_UNEXPECTED_EOF;
+        }
+        *out = ptr(it) as *const c_void;
+        Self::advance(it, len);
+        NO_ERROR
+    }
 }
 
-/// The callback path, kept out of line so it does not bloat every read site.
+impl Source for Reader {
+    fn can_read(it: &CborValue, len: usize) -> bool {
+        (ops(it).can_read_bytes)(it.source.0, len)
+    }
+
+    unsafe fn read(it: &CborValue, offset: usize, len: usize) -> u64 {
+        let mut buf = [0u8; 8];
+        // The callback may fill our buffer or hand back its own pointer, so use
+        // whatever it returns rather than assuming it wrote into `buf`.
+        let src = (ops(it).read_bytes)(it.source.0, buf.as_mut_ptr() as *mut c_void, offset, len)
+            as *const u8;
+        be_load(src, len)
+    }
+
+    fn advance(it: &mut CborValue, n: usize) {
+        (ops(it).advance_bytes)(it.source.0, n);
+    }
+
+    fn transfer_string(
+        it: &mut CborValue,
+        out: &mut *const c_void,
+        offset: usize,
+        len: usize,
+    ) -> c_int {
+        (ops(it).transfer_string)(it.source.0, out, offset, len)
+    }
+}
+
+/// Runs a source-generic function against the source this parser was
+/// initialised with.
 ///
-/// SAFETY: as `read_unchecked`, and `external(it)` must hold.
-#[inline(never)]
-unsafe fn read_external(it: &CborValue, offset: usize, len: usize) -> u64 {
-    let mut buf = [0u8; 8];
-    // The callback may fill our buffer or hand back its own pointer, so use
-    // whatever it returns rather than assuming it wrote into `buf`.
-    let src = (ops(it).read_bytes)(it.source.0, buf.as_mut_ptr() as *mut c_void, offset, len)
-        as *const u8;
-    be_load(src, len)
+/// `dispatch!(it, f(a, b))` becomes `f::<Buffer>(a, b)` or `f::<Reader>(a, b)`;
+/// the `S::` form does the same for a trait method. Every entry point below
+/// goes through this exactly once, and nothing underneath reads the flag again.
+macro_rules! dispatch {
+    ($it:expr, S::$m:ident($($arg:expr),* $(,)?)) => {
+        if external($it) {
+            <Reader as Source>::$m($($arg),*)
+        } else {
+            <Buffer as Source>::$m($($arg),*)
+        }
+    };
+    ($it:expr, $f:ident($($arg:expr),* $(,)?)) => {
+        if external($it) {
+            $f::<Reader>($($arg),*)
+        } else {
+            $f::<Buffer>($($arg),*)
+        }
+    };
 }
 
 /// Big-endian load of 1, 2, 4 or 8 bytes.
@@ -193,43 +336,25 @@ unsafe fn be_load(src: *const u8, len: usize) -> u64 {
     }
 }
 
-#[inline(always)]
+// The four reads other modules need. They are off the parse hot path -- pretty
+// printing and JSON conversion call them once per item, around far more
+// expensive formatting -- so they take the dispatch rather than making every
+// caller generic too.
+
 pub(crate) fn read_byte(it: &CborValue) -> Option<u8> {
-    if !can_read(it, 1) {
-        return None;
-    }
-    // SAFETY: just bounds-checked.
-    Some(unsafe { read_unchecked(it, 0, 1) } as u8)
+    dispatch!(it, S::read_byte(it))
 }
 
-#[inline(always)]
-fn advance_bytes(it: &mut CborValue, n: usize) {
-    if external(it) {
-        (ops(it).advance_bytes)(it.source.0, n);
-        return;
-    }
-    it.source.0 = (it.source.0 as usize).wrapping_add(n) as *mut c_void;
+pub(crate) fn number_at_cursor(it: &CborValue) -> Option<u64> {
+    dispatch!(it, S::number_at_cursor(it))
 }
 
-/// Points `out` at `len` bytes of string content starting `offset` ahead, and
-/// steps the cursor past them. An external source may materialise the bytes
-/// itself, which is why it gets to answer this rather than us computing it.
-fn transfer_string(
-    it: &mut CborValue,
-    out: &mut *const c_void,
-    offset: usize,
-    len: usize,
-) -> c_int {
-    if external(it) {
-        return (ops(it).transfer_string)(it.source.0, out, offset, len);
-    }
-    advance_bytes(it, offset);
-    if !can_read(it, len) {
-        return ERR_UNEXPECTED_EOF;
-    }
-    *out = ptr(it) as *const c_void;
-    advance_bytes(it, len);
-    NO_ERROR
+pub(crate) fn extract_int64(it: &CborValue) -> u64 {
+    dispatch!(it, S::int64(it))
+}
+
+pub(crate) fn decode_int64_internal(it: &CborValue) -> u64 {
+    dispatch!(it, S::wide_int64(it))
 }
 
 /// How many extra length bytes follow a head with this additional-info value.
@@ -252,57 +377,14 @@ pub(crate) fn is_container(t: u8) -> bool {
     t == TYPE_ARRAY || t == TYPE_MAP
 }
 
-/// Decodes the number in the head byte at the cursor, reading it fresh from the
-/// source rather than from `extra`.
-///
-/// The cached fields describe whatever was last preparsed. During string-chunk
-/// iteration the cursor sits on a chunk head that was never preparsed, so the
-/// cached value belongs to the enclosing string and is the wrong answer.
-pub(crate) fn number_at_cursor(it: &CborValue) -> Option<u64> {
-    let head = read_byte(it)?;
-    let descriptor = head & SMALL_VALUE_MASK;
-    if descriptor < VALUE_8BIT {
-        return Some(descriptor as u64);
-    }
-    if descriptor > VALUE_64BIT {
-        return None;
-    }
-    let need = bytes_needed(descriptor);
-    if !can_read(it, 1 + need) {
-        return None;
-    }
-    // SAFETY: bounds checked immediately above.
-    Some(unsafe { read_unchecked(it, 1, need) })
-}
-
-/// The value carried in the head, reading past `extra` when it did not fit.
-pub(crate) fn extract_int64(it: &CborValue) -> u64 {
-    if it.flags & F_TOO_LARGE != 0 {
-        decode_int64_internal(it)
-    } else {
-        it.extra as u64
-    }
-}
-
-pub(crate) fn decode_int64_internal(it: &CborValue) -> u64 {
-    // SAFETY: preparse only sets these flags after checking the bytes are there.
-    unsafe {
-        if it.flags & F_IS_64BIT != 0 {
-            read_unchecked(it, 1, 8)
-        } else {
-            read_unchecked(it, 1, 4)
-        }
-    }
-}
-
 /// Reads the current item's head value and steps over the whole head.
-fn extract_number_and_advance(it: &mut CborValue) -> u64 {
-    let v = extract_int64(it);
+fn extract_number_and_advance<S: Source>(it: &mut CborValue) -> u64 {
+    let v = S::int64(it);
     // SAFETY: preparse established that the head byte is readable.
-    // Must go through read_unchecked, not the buffer pointer: with an external
+    // Must go through the source, not the buffer pointer: with an external
     // source `it.source` is an opaque token and dereferencing it reads garbage.
-    let descriptor = unsafe { read_unchecked(it, 0, 1) } as u8 & SMALL_VALUE_MASK;
-    advance_bytes(it, bytes_needed(descriptor) + 1);
+    let descriptor = unsafe { S::read(it, 0, 1) } as u8 & SMALL_VALUE_MASK;
+    S::advance(it, bytes_needed(descriptor) + 1);
     v
 }
 
@@ -310,13 +392,13 @@ fn extract_number_and_advance(it: &mut CborValue) -> u64 {
 ///
 /// This is the heart of the parser: everything else navigates, this is the only
 /// place that interprets a byte.
-fn preparse_value(it: &mut CborValue) -> c_int {
+fn preparse_value<S: Source>(it: &mut CborValue) -> c_int {
     const FLAGS_TO_KEEP: u8 = F_CONTAINER_IS_MAP | F_NEXT_IS_MAP_KEY;
 
     it.type_ = TYPE_INVALID;
     it.flags &= FLAGS_TO_KEEP;
 
-    let Some(descriptor) = read_byte(it) else {
+    let Some(descriptor) = S::read_byte(it) else {
         return ERR_UNEXPECTED_EOF;
     };
 
@@ -347,15 +429,15 @@ fn preparse_value(it: &mut CborValue) -> c_int {
 
     let need = bytes_needed(descriptor);
     if need != 0 {
-        if !can_read(it, need + 1) {
+        if !S::can_read(it, need + 1) {
             return ERR_UNEXPECTED_EOF;
         }
         it.extra = 0;
         // Up to 16 bits fit in `extra`; wider values stay in the buffer and get
         // decoded on demand, which is how the parser avoids storing a u64.
         match need {
-            1 => it.extra = unsafe { read_unchecked(it, 1, 1) } as u16,
-            2 => it.extra = unsafe { read_unchecked(it, 1, 2) } as u16,
+            1 => it.extra = unsafe { S::read(it, 1, 1) } as u16,
+            2 => it.extra = unsafe { S::read(it, 1, 2) } as u16,
             _ => it.flags |= descriptor & 3,
         }
     }
@@ -373,12 +455,12 @@ fn preparse_value(it: &mut CborValue) -> c_int {
             SINGLE_PRECISION_FLOAT | DOUBLE_PRECISION_FLOAT => {
                 it.flags |= F_TOO_LARGE;
                 // SAFETY: the head byte was read above.
-                it.type_ = unsafe { read_unchecked(it, 0, 1) } as u8;
+                it.type_ = unsafe { S::read(it, 0, 1) } as u8;
             }
             21..=23 | 25 => {
                 // true, null, undefined, half-float: the head byte is the type.
                 // SAFETY: the head byte was read above.
-                it.type_ = unsafe { read_unchecked(it, 0, 1) } as u8;
+                it.type_ = unsafe { S::read(it, 0, 1) } as u8;
             }
             // A simple value below 32 must use the one-byte form; spelling it
             // in two bytes is an overlong encoding.
@@ -395,8 +477,8 @@ fn preparse_value(it: &mut CborValue) -> c_int {
 
 /// Like `preparse_value`, but recognises the break byte that ends an
 /// indefinite-length container.
-fn preparse_next_value_nodecrement(it: &mut CborValue) -> c_int {
-    if it.remaining == u32::MAX && read_byte(it) == Some(BREAK_BYTE) {
+fn preparse_next_value_nodecrement<S: Source>(it: &mut CborValue) -> c_int {
+    if it.remaining == u32::MAX && S::read_byte(it) == Some(BREAK_BYTE) {
         // A map that has just read a key, or a dangling tag, cannot end here.
         let mid_pair = it.flags & F_CONTAINER_IS_MAP != 0 && it.flags & F_NEXT_IS_MAP_KEY != 0;
         if mid_pair || it.type_ == TYPE_TAG {
@@ -407,10 +489,10 @@ fn preparse_next_value_nodecrement(it: &mut CborValue) -> c_int {
         it.flags |= F_UNKNOWN_LENGTH; // leave_container consumes the break
         return NO_ERROR;
     }
-    preparse_value(it)
+    preparse_value::<S>(it)
 }
 
-fn preparse_next_value(it: &mut CborValue) -> c_int {
+fn preparse_next_value<S: Source>(it: &mut CborValue) -> c_int {
     // A tag is a prefix on the next item, so it does not consume a slot in the
     // enclosing container and does not flip the map key/value phase.
     let item_counts = it.type_ != TYPE_TAG;
@@ -426,15 +508,15 @@ fn preparse_next_value(it: &mut CborValue) -> c_int {
     if item_counts {
         it.flags ^= F_NEXT_IS_MAP_KEY;
     }
-    preparse_next_value_nodecrement(it)
+    preparse_next_value_nodecrement::<S>(it)
 }
 
-fn advance_internal(it: &mut CborValue) -> c_int {
-    let length = extract_number_and_advance(it);
+fn advance_internal<S: Source>(it: &mut CborValue) -> c_int {
+    let length = extract_number_and_advance::<S>(it);
     if it.type_ == TYPE_BYTE_STRING || it.type_ == TYPE_TEXT_STRING {
-        advance_bytes(it, length as usize);
+        S::advance(it, length as usize);
     }
-    preparse_next_value(it)
+    preparse_next_value::<S>(it)
 }
 
 // -- initialisation --------------------------------------------------------
@@ -460,7 +542,10 @@ pub extern "C" fn cbor_parser_init(
         v.extra = 0;
         v.type_ = TYPE_INVALID;
         v.flags = 0;
-        preparse_value(v)
+        // The caller's `flags` are free to name a source we did not set up here;
+        // upstream would parse whatever that implies, so dispatch on what was
+        // stored rather than assuming a buffer.
+        dispatch!(v, preparse_value(v))
     }
 }
 
@@ -487,7 +572,9 @@ pub extern "C" fn cbor_parser_init_reader(
         v.extra = 0;
         v.type_ = TYPE_INVALID;
         v.flags = 0;
-        preparse_value(v)
+        // EXTERNAL_SOURCE was just set two lines up, so there is nothing to
+        // decide.
+        preparse_value::<Reader>(v)
     }
 }
 
@@ -500,12 +587,12 @@ pub extern "C" fn cbor_value_advance_fixed(it: *mut CborValue) -> c_int {
     if v.remaining == 0 {
         return ERR_ADVANCE_PAST_EOF;
     }
-    advance_internal(v)
+    dispatch!(v, advance_internal(v))
 }
 
-fn advance_recursive(it: &mut CborValue, nesting: i32) -> c_int {
+fn advance_recursive<S: Source>(it: &mut CborValue, nesting: i32) -> c_int {
     if is_fixed_type(it.type_) {
-        return advance_internal(it);
+        return advance_internal::<S>(it);
     }
     if !is_container(it.type_) {
         // A string: skip its bytes, chunked or not. C passes `it` as both the
@@ -515,7 +602,7 @@ fn advance_recursive(it: &mut CborValue, nesting: i32) -> c_int {
         let out: *mut CborValue = it;
         let mut len = usize::MAX;
         let mut all = false;
-        return iterate_string_chunks(
+        return iterate_string_chunks::<S>(
             it,
             core::ptr::null_mut(),
             &mut len,
@@ -536,30 +623,27 @@ fn advance_recursive(it: &mut CborValue, nesting: i32) -> c_int {
         type_: 0,
         flags: 0,
     };
-    let err = enter_container(it, &mut recursed);
+    let err = enter_container::<S>(it, &mut recursed);
     if err != NO_ERROR {
         return err;
     }
     while recursed.type_ != TYPE_INVALID {
-        let err = advance_recursive(&mut recursed, nesting - 1);
+        let err = advance_recursive::<S>(&mut recursed, nesting - 1);
         if err != NO_ERROR {
             return err;
         }
     }
-    leave_container(it, &recursed)
+    leave_container::<S>(it, &recursed)
 }
 
 #[no_mangle]
 pub extern "C" fn cbor_value_advance(it: *mut CborValue) -> c_int {
     // SAFETY: module contract.
     let v = unsafe { as_mut(it) };
-    if v.remaining == 0 {
-        return ERR_ADVANCE_PAST_EOF;
-    }
-    advance_recursive(v, MAX_RECURSIONS)
+    dispatch!(v, advance(v))
 }
 
-fn enter_container(it: &CborValue, recursed: &mut CborValue) -> c_int {
+fn enter_container<S: Source>(it: &CborValue, recursed: &mut CborValue) -> c_int {
     *recursed = CborValue {
         parser: it.parser,
         source: it.source,
@@ -571,9 +655,9 @@ fn enter_container(it: &CborValue, recursed: &mut CborValue) -> c_int {
 
     if it.flags & F_UNKNOWN_LENGTH != 0 {
         recursed.remaining = u32::MAX;
-        advance_bytes(recursed, 1);
+        S::advance(recursed, 1);
     } else {
-        let len = extract_number_and_advance(recursed);
+        let len = extract_number_and_advance::<S>(recursed);
         recursed.remaining = len as u32;
         if recursed.remaining as u64 != len || len == u32::MAX as u64 {
             recursed.source = it.source;
@@ -593,7 +677,7 @@ fn enter_container(it: &CborValue, recursed: &mut CborValue) -> c_int {
         }
     }
     recursed.flags = recursed.type_ & F_CONTAINER_IS_MAP;
-    preparse_next_value_nodecrement(recursed)
+    preparse_next_value_nodecrement::<S>(recursed)
 }
 
 #[no_mangle]
@@ -602,15 +686,18 @@ pub extern "C" fn cbor_value_enter_container(
     recursed: *mut CborValue,
 ) -> c_int {
     // SAFETY: module contract, for two distinct values.
-    unsafe { enter_container(as_ref(it), as_mut(recursed)) }
+    unsafe {
+        let v = as_ref(it);
+        dispatch!(v, enter_container(v, as_mut(recursed)))
+    }
 }
 
-fn leave_container(it: &mut CborValue, recursed: &CborValue) -> c_int {
+fn leave_container<S: Source>(it: &mut CborValue, recursed: &CborValue) -> c_int {
     it.source = recursed.source;
     if recursed.flags & F_UNKNOWN_LENGTH != 0 {
-        advance_bytes(it, 1); // consume the break
+        S::advance(it, 1); // consume the break
     }
-    preparse_next_value(it)
+    preparse_next_value::<S>(it)
 }
 
 #[no_mangle]
@@ -619,13 +706,17 @@ pub extern "C" fn cbor_value_leave_container(
     recursed: *const CborValue,
 ) -> c_int {
     // SAFETY: module contract, for two distinct values.
-    unsafe { leave_container(as_mut(it), as_ref(recursed)) }
+    unsafe {
+        let v = as_mut(it);
+        dispatch!(v, leave_container(v, as_ref(recursed)))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn cbor_value_reparse(it: *mut CborValue) -> c_int {
     // SAFETY: module contract.
-    preparse_value(unsafe { as_mut(it) })
+    let v = unsafe { as_mut(it) };
+    dispatch!(v, preparse_value(v))
 }
 
 #[no_mangle]
@@ -650,8 +741,15 @@ pub(crate) fn clone(it: &CborValue) -> CborValue {
 pub extern "C" fn cbor_value_skip_tag(it: *mut CborValue) -> c_int {
     // SAFETY: module contract.
     let v = unsafe { as_mut(it) };
-    while v.type_ == TYPE_TAG {
-        let err = cbor_value_advance_fixed(v);
+    dispatch!(v, skip_tag(v))
+}
+
+fn skip_tag<S: Source>(it: &mut CborValue) -> c_int {
+    while it.type_ == TYPE_TAG {
+        if it.remaining == 0 {
+            return ERR_ADVANCE_PAST_EOF;
+        }
+        let err = advance_internal::<S>(it);
         if err != NO_ERROR {
             return err;
         }
@@ -714,7 +812,7 @@ pub extern "C" fn cbor_value_get_half_float_as_float(
     // SAFETY: module contract, plus a writable `result`.
     unsafe {
         let v = as_ref(value);
-        let bits = read_unchecked(v, 1, 2) as u16;
+        let bits = dispatch!(v, S::read(v, 1, 2)) as u16;
         *result = cbor_core::half::decode(bits);
         NO_ERROR
     }
@@ -747,7 +845,7 @@ enum Iterate {
 /// A NUL is written only when there is room *beyond* the content (`buflen >
 /// total`, strictly). For `Compare` that NUL check is what stops a prefix from
 /// comparing equal to a longer expected string.
-fn iterate_string_chunks(
+fn iterate_string_chunks<S: Source>(
     value: &CborValue,
     buffer: *mut u8,
     buflen: &mut usize,
@@ -759,7 +857,7 @@ fn iterate_string_chunks(
     *result = true;
     let mut total: usize = 0;
 
-    let err = _cbor_value_begin_string_iteration(&mut cursor);
+    let err = begin_string_iteration::<S>(&mut cursor);
     if err != NO_ERROR {
         return err;
     }
@@ -767,7 +865,7 @@ fn iterate_string_chunks(
     loop {
         let mut ptr: *const c_void = core::ptr::null();
         let mut chunk_len: usize = 0;
-        let err = get_chunk(&mut cursor, &mut ptr, &mut chunk_len);
+        let err = get_chunk::<S>(&mut cursor, &mut ptr, &mut chunk_len);
         if err == ERR_NO_MORE_STRING_CHUNKS {
             break;
         }
@@ -795,7 +893,7 @@ fn iterate_string_chunks(
     }
     *buflen = total;
 
-    let err = _cbor_value_finish_string_iteration(&mut cursor);
+    let err = finish_string_iteration::<S>(&mut cursor);
     if let Some(n) = next {
         // SAFETY: module contract. `next` frequently aliases `value`, which is
         // why the walk ran on a copy.
@@ -822,12 +920,12 @@ unsafe fn apply(op: Iterate, dst: *mut u8, offset: usize, src: *const u8, len: u
 
 /// One chunk at the cursor, advancing past it. Split out so
 /// `iterate_string_chunks` reads the same as upstream's loop.
-fn get_chunk(it: &mut CborValue, out: &mut *const c_void, len: &mut usize) -> c_int {
-    let (offset, n) = match chunk_size(it) {
+fn get_chunk<S: Source>(it: &mut CborValue, out: &mut *const c_void, len: &mut usize) -> c_int {
+    let (offset, n) = match chunk_size::<S>(it) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let err = transfer_string(it, out, offset, n);
+    let err = S::transfer_string(it, out, offset, n);
     if err != NO_ERROR {
         return err;
     }
@@ -866,13 +964,17 @@ pub extern "C" fn _cbor_value_copy_string(
         } else {
             Iterate::Copy
         };
-        let err = iterate_string_chunks(
-            as_ref(value),
-            buffer as *mut u8,
-            &mut *buflen,
-            &mut copied_all,
-            if next.is_null() { None } else { Some(next) },
-            op,
+        let v = as_ref(value);
+        let err = dispatch!(
+            v,
+            iterate_string_chunks(
+                v,
+                buffer as *mut u8,
+                &mut *buflen,
+                &mut copied_all,
+                if next.is_null() { None } else { Some(next) },
+                op,
+            )
         );
         if err != NO_ERROR {
             return err;
@@ -895,34 +997,44 @@ pub extern "C" fn cbor_value_text_string_equals(
 ) -> c_int {
     // SAFETY: module contract; `string` is a NUL-terminated C string.
     unsafe {
-        // A tagged string is still that string as far as comparison goes.
-        let mut copy = clone(as_ref(value));
-        let err = cbor_value_skip_tag(&mut copy);
-        if err != NO_ERROR {
-            return err;
-        }
-        if copy.type_ != TYPE_TEXT_STRING {
-            *result = false;
-            return NO_ERROR;
-        }
-
-        let mut buflen = 0usize;
-        while *string.add(buflen) != 0 {
-            buflen += 1;
-        }
-        // Capacity is strlen, not strlen+1. The NUL comparison then runs only
-        // when the CBOR string is *shorter* than expected, which is exactly the
-        // case that has to fail; for equal lengths there is no spare byte and
-        // no comparison, and for equal empty strings nothing is compared at all.
-        iterate_string_chunks(
-            &copy,
-            string as *mut u8,
-            &mut buflen,
-            &mut *result,
-            None,
-            Iterate::Compare,
-        )
+        let v = as_ref(value);
+        dispatch!(v, text_string_equals(v, string, &mut *result))
     }
+}
+
+/// SAFETY: `string` is a NUL-terminated C string.
+unsafe fn text_string_equals<S: Source>(
+    value: &CborValue,
+    string: *const c_char,
+    result: &mut bool,
+) -> c_int {
+    // A tagged string is still that string as far as comparison goes.
+    let mut copy = clone(value);
+    let err = skip_tag::<S>(&mut copy);
+    if err != NO_ERROR {
+        return err;
+    }
+    if copy.type_ != TYPE_TEXT_STRING {
+        *result = false;
+        return NO_ERROR;
+    }
+
+    let mut buflen = 0usize;
+    while *string.add(buflen) != 0 {
+        buflen += 1;
+    }
+    // Capacity is strlen, not strlen+1. The NUL comparison then runs only when
+    // the CBOR string is *shorter* than expected, which is exactly the case
+    // that has to fail; for equal lengths there is no spare byte and no
+    // comparison, and for equal empty strings nothing is compared at all.
+    iterate_string_chunks::<S>(
+        &copy,
+        string as *mut u8,
+        &mut buflen,
+        result,
+        None,
+        Iterate::Compare,
+    )
 }
 
 #[no_mangle]
@@ -933,69 +1045,87 @@ pub extern "C" fn cbor_value_map_find_value(
 ) -> c_int {
     // SAFETY: module contract.
     unsafe {
-        let e = as_mut(element);
-        let err = cbor_value_enter_container(map, element);
+        let m = as_ref(map);
+        dispatch!(m, map_find_value(m, string, as_mut(element)))
+    }
+}
+
+/// SAFETY: `string` is a NUL-terminated C string; `element` is the caller's
+/// out-parameter and is distinct from `map`.
+unsafe fn map_find_value<S: Source>(
+    map: &CborValue,
+    string: *const c_char,
+    e: &mut CborValue,
+) -> c_int {
+    let err = enter_container::<S>(map, e);
+    if err != NO_ERROR {
+        e.type_ = TYPE_INVALID;
+        return err;
+    }
+    let mut len = 0usize;
+    while *string.add(len) != 0 {
+        len += 1;
+    }
+
+    while e.type_ != TYPE_INVALID {
+        // Keys may be tagged; the tag is not part of the comparison.
+        let err = skip_tag::<S>(e);
         if err != NO_ERROR {
             e.type_ = TYPE_INVALID;
             return err;
         }
-        let mut len = 0usize;
-        while *string.add(len) != 0 {
-            len += 1;
-        }
 
-        while e.type_ != TYPE_INVALID {
-            // Keys may be tagged; the tag is not part of the comparison.
-            let err = cbor_value_skip_tag(element);
+        if e.type_ == TYPE_TEXT_STRING {
+            let mut equals = false;
+            let mut buflen = len;
+            let out: *mut CborValue = e;
+            let err = iterate_string_chunks::<S>(
+                e,
+                string as *mut u8,
+                &mut buflen,
+                &mut equals,
+                Some(out),
+                Iterate::Compare,
+            );
             if err != NO_ERROR {
                 e.type_ = TYPE_INVALID;
                 return err;
             }
-
-            if e.type_ == TYPE_TEXT_STRING {
-                let mut equals = false;
-                let mut buflen = len;
-                let err = iterate_string_chunks(
-                    e,
-                    string as *mut u8,
-                    &mut buflen,
-                    &mut equals,
-                    Some(element),
-                    Iterate::Compare,
-                );
-                if err != NO_ERROR {
-                    e.type_ = TYPE_INVALID;
-                    return err;
-                }
-                if equals {
-                    // The cursor already sits on the value; re-decode its head
-                    // so the caller gets a usable iterator.
-                    return preparse_value(e);
-                }
-            } else {
-                let err = cbor_value_advance(element);
-                if err != NO_ERROR {
-                    e.type_ = TYPE_INVALID;
-                    return err;
-                }
+            if equals {
+                // The cursor already sits on the value; re-decode its head so
+                // the caller gets a usable iterator.
+                return preparse_value::<S>(e);
             }
-
-            // Skip the value this key belonged to.
-            let err = cbor_value_skip_tag(element);
-            if err != NO_ERROR {
-                e.type_ = TYPE_INVALID;
-                return err;
-            }
-            let err = cbor_value_advance(element);
+        } else {
+            let err = advance::<S>(e);
             if err != NO_ERROR {
                 e.type_ = TYPE_INVALID;
                 return err;
             }
         }
 
-        e.type_ = TYPE_INVALID;
-        NO_ERROR
+        // Skip the value this key belonged to.
+        let err = skip_tag::<S>(e);
+        if err != NO_ERROR {
+            e.type_ = TYPE_INVALID;
+            return err;
+        }
+        let err = advance::<S>(e);
+        if err != NO_ERROR {
+            e.type_ = TYPE_INVALID;
+            return err;
+        }
     }
+
+    e.type_ = TYPE_INVALID;
+    NO_ERROR
+}
+
+fn advance<S: Source>(it: &mut CborValue) -> c_int {
+    if it.remaining == 0 {
+        return ERR_ADVANCE_PAST_EOF;
+    }
+    advance_recursive::<S>(it, MAX_RECURSIONS)
 }
 
 // -- string chunk iteration ------------------------------------------------
@@ -1014,9 +1144,13 @@ fn length_known(it: &CborValue) -> bool {
 pub extern "C" fn _cbor_value_begin_string_iteration(value: *mut CborValue) -> c_int {
     // SAFETY: module contract.
     let it = unsafe { as_mut(value) };
+    dispatch!(it, begin_string_iteration(it))
+}
+
+fn begin_string_iteration<S: Source>(it: &mut CborValue) -> c_int {
     it.flags |= F_ITERATING_CHUNKS | F_BEFORE_FIRST_CHUNK;
     if !length_known(it) {
-        advance_bytes(it, 1); // step over the indefinite head onto chunk one
+        S::advance(it, 1); // step over the indefinite head onto chunk one
     }
     NO_ERROR
 }
@@ -1025,20 +1159,24 @@ pub extern "C" fn _cbor_value_begin_string_iteration(value: *mut CborValue) -> c
 pub extern "C" fn _cbor_value_finish_string_iteration(value: *mut CborValue) -> c_int {
     // SAFETY: module contract.
     let it = unsafe { as_mut(value) };
+    dispatch!(it, finish_string_iteration(it))
+}
+
+fn finish_string_iteration<S: Source>(it: &mut CborValue) -> c_int {
     if !length_known(it) {
-        advance_bytes(it, 1); // consume the break
+        S::advance(it, 1); // consume the break
     }
-    preparse_next_value(it)
+    preparse_next_value::<S>(it)
 }
 
 /// Size of the chunk at the cursor, plus how far past the cursor its bytes
 /// start. Returns `NoMoreStringChunks` at the end, which is the loop condition
 /// rather than an error.
-fn chunk_size(it: &CborValue) -> Result<(usize, usize), c_int> {
+fn chunk_size<S: Source>(it: &CborValue) -> Result<(usize, usize), c_int> {
     if length_known(it) && it.flags & F_BEFORE_FIRST_CHUNK == 0 {
         return Err(ERR_NO_MORE_STRING_CHUNKS);
     }
-    let Some(descriptor) = read_byte(it) else {
+    let Some(descriptor) = S::read_byte(it) else {
         return Err(ERR_UNEXPECTED_EOF);
     };
     if descriptor == BREAK_BYTE {
@@ -1056,11 +1194,11 @@ fn chunk_size(it: &CborValue) -> Result<(usize, usize), c_int> {
         return Err(ERR_ILLEGAL_NUMBER);
     }
     let need = bytes_needed(descriptor);
-    if !can_read(it, 1 + need) {
+    if !S::can_read(it, 1 + need) {
         return Err(ERR_UNEXPECTED_EOF);
     }
     // SAFETY: bounds checked immediately above.
-    let val = unsafe { read_unchecked(it, 1, need) };
+    let val = unsafe { S::read(it, 1, need) };
     let len = val as usize;
     if len as u64 != val {
         return Err(ERR_DATA_TOO_LARGE);
@@ -1075,7 +1213,8 @@ pub extern "C" fn _cbor_value_get_string_chunk_size(
 ) -> c_int {
     // SAFETY: module contract, plus a writable `len`.
     unsafe {
-        match chunk_size(as_ref(value)) {
+        let v = as_ref(value);
+        match dispatch!(v, chunk_size(v)) {
             Ok((_, n)) => {
                 *len = n;
                 NO_ERROR
@@ -1096,20 +1235,31 @@ pub extern "C" fn _cbor_value_get_string_chunk(
     // the same cursor for both — so the read happens before anything is written.
     unsafe {
         let it = as_ref(value);
-        let (offset, n) = match chunk_size(it) {
-            Ok(v) => v,
-            Err(e) => return e,
-        };
-        let mut cursor = clone(it);
-        let err = transfer_string(&mut cursor, &mut *bufferptr, offset, n);
-        if err != NO_ERROR {
-            return err;
-        }
-        *len = n;
-
-        let out = as_mut(next);
-        *out = cursor;
-        out.flags &= !F_BEFORE_FIRST_CHUNK;
-        NO_ERROR
+        dispatch!(
+            it,
+            get_string_chunk(it, &mut *bufferptr, &mut *len, as_mut(next))
+        )
     }
+}
+
+fn get_string_chunk<S: Source>(
+    it: &CborValue,
+    bufferptr: &mut *const c_void,
+    len: &mut usize,
+    next: &mut CborValue,
+) -> c_int {
+    let (offset, n) = match chunk_size::<S>(it) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let mut cursor = clone(it);
+    let err = S::transfer_string(&mut cursor, bufferptr, offset, n);
+    if err != NO_ERROR {
+        return err;
+    }
+    *len = n;
+
+    *next = cursor;
+    next.flags &= !F_BEFORE_FIRST_CHUNK;
+    NO_ERROR
 }
