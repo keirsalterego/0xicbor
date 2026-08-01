@@ -590,6 +590,30 @@ pub extern "C" fn cbor_value_advance_fixed(it: *mut CborValue) -> c_int {
     dispatch!(v, advance_internal(v))
 }
 
+/// Steps over a string, definite or chunked, without copying it anywhere.
+///
+/// Kept out of `advance_recursive` rather than written inline. Setting up this
+/// six-argument call needs registers, and every one it needs is a register
+/// `advance_recursive` has to save and restore on entry -- on a function that
+/// recurses once per nesting level, so the cost is paid all the way down.
+#[inline(never)]
+fn skip_string<S: Source>(it: &mut CborValue) -> c_int {
+    // C passes `it` as both the value to read and the `next` to write, which
+    // Rust will not allow as one borrow. Reading from a snapshot makes the
+    // aliasing go away instead of papering over it with a raw pointer.
+    let out: *mut CborValue = it;
+    let mut len = usize::MAX;
+    let mut all = false;
+    iterate_string_chunks::<S>(
+        it,
+        core::ptr::null_mut(),
+        &mut len,
+        &mut all,
+        Some(out),
+        Iterate::Noop,
+    )
+}
+
 fn advance_recursive<S: Source>(it: &mut CborValue, nesting: i32) -> c_int {
     // The two interesting classes are each a pair of adjacent major types that
     // differ only in bit 5: byte/text string are 0x40 and 0x60, array/map are
@@ -601,23 +625,7 @@ fn advance_recursive<S: Source>(it: &mut CborValue, nesting: i32) -> c_int {
     // rotate and a bit-table lookup: thirteen instructions and three branches
     // where this is four and two. On `deep_nest.cbor` that runs 504,000 times.
     match it.type_ & !MAJOR_PAIR_BIT {
-        TYPE_BYTE_STRING => {
-            // A string: skip its bytes, chunked or not. C passes `it` as both
-            // the value to read and the `next` to write, which Rust will not
-            // allow as one borrow. Reading from a snapshot makes the aliasing
-            // go away instead of papering over it with a raw pointer.
-            let out: *mut CborValue = it;
-            let mut len = usize::MAX;
-            let mut all = false;
-            return iterate_string_chunks::<S>(
-                it,
-                core::ptr::null_mut(),
-                &mut len,
-                &mut all,
-                Some(out),
-                Iterate::Noop,
-            );
-        }
+        TYPE_BYTE_STRING => return skip_string::<S>(it),
         TYPE_ARRAY => {}
         _ => return advance_internal::<S>(it),
     }
