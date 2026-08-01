@@ -205,3 +205,25 @@ faster than the C.
 The alternative was threading a `bool` down by hand, which is the same specialisation
 written out longhand and would have doubled the argument list of every internal function
 without the compiler checking that no call site got it wrong.
+
+## 14. `enter_container` keeps C's out-parameter, against the grain of the rest
+
+Everywhere else in this port, a C function that returns a value through an out-parameter
+plus a status code becomes a Rust function that returns the value. `enter_container` is the
+exception: internally it still takes `&mut CborValue` and fills it.
+
+The idiomatic version was written and measured. `advance_recursive` recurses once per
+nesting level, so on `deep_nest.cbor` — 4,000 chains of 40 nested arrays — that is 160,000
+calls, and returning a 24-byte struct by value instead of filling one moved that file from
+1.25x to 1.68x against the C. Mean across the corpus went 1.04x to 1.11x. The struct is
+three words; returning it puts it through the return slot on every level, where filling a
+caller's stack slot leaves it where the next call already wants it.
+
+So the out-parameter stayed and this note exists instead. The shim's own
+`cbor_value_enter_container` was always going to have that shape — the C signature demands
+it — so the inconsistency is confined to one internal function that the FFI boundary was
+already forcing.
+
+Recorded because "make it idiomatic" is the default advice for a port, and this is a place
+where taking it made the thing measurably worse. One measurement of a rejected variant, not
+a published headline.
