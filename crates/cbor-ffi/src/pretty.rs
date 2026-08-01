@@ -92,6 +92,21 @@ fn indicator(it: &CborValue, flags: c_int) -> &'static str {
     }
 }
 
+/// Leaves the caller's cursor where the failed descent got to, then returns the
+/// error unchanged.
+///
+/// Upstream's `copy_current_position`. Without it a caller that inspects its
+/// `CborValue` after a failed render sees the cursor still parked on the opening
+/// bracket, which says nothing about where the input actually went wrong. The
+/// error code is the same either way, so this only shows up in the state left
+/// behind — which is exactly the kind of thing that goes unnoticed.
+fn carry_position_back(it: *mut CborValue, recursed: &CborValue, err: c_int) -> c_int {
+    // SAFETY: module contract. `recursed` is a separate value, and nothing
+    // borrows `*it` past this point.
+    unsafe { (*it).source = recursed.source };
+    err
+}
+
 /// True when `v` is a whole number that fits in a `u64`, in which case upstream
 /// prints it as an integer with a trailing dot rather than in `%g` form.
 fn as_whole_u64(v: f64) -> Option<u64> {
@@ -126,11 +141,11 @@ fn value_to_pretty(
             let mut recursed = parser::clone(v);
             let err = crate::parser::cbor_value_enter_container(it, &mut recursed);
             if err != NO_ERROR {
-                return err;
+                return carry_position_back(it, &recursed, err);
             }
             let err = container_to_pretty(out, &mut recursed, type_, flags, recursions_left - 1);
             if err != NO_ERROR {
-                return err;
+                return carry_position_back(it, &recursed, err);
             }
             let err = crate::parser::cbor_value_leave_container(it, &recursed);
             if err != NO_ERROR {
