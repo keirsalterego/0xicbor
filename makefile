@@ -29,7 +29,7 @@ CXXFLAGS := -std=c++20 -O2 -I$(INCLUDE) $(QT_CFLAGS)
 # directly, so it tests C sources we do not have. See decisions.md.
 QTESTS := encoder parser tojson
 
-.PHONY: all lib test test-port clean fmt lint symbols
+.PHONY: all lib test test-port clean fmt lint symbols fuzz bench
 
 all: lib $(QTESTS:%=$(BUILD)/tst_%) $(BUILD)/tst_c90
 
@@ -136,6 +136,19 @@ symbols: $(LIB)
 	  | grep -E '^_?cbor_' | sort -u > $(BUILD)/symbols-ours.txt
 	@diff bench/reference/symbols-upstream.txt $(BUILD)/symbols-ours.txt \
 	  && echo "symbols: 44/44, zero diff"
+
+# Differential fuzz against the out-of-process C oracle. Override the seconds
+# with DURATION, and pick the renderer with TARGET=json_diff.
+DURATION ?= 60
+
+fuzz:
+	./fuzz/run.sh $(DURATION)
+
+# Rebuild both drivers against the two archives and rewrite bench/results.json.
+# Deliberately not part of `make`: it takes minutes and wants a quiet machine.
+bench: $(LIB)
+	bench/build.sh
+	bench/run.py
 
 fmt:
 	$(CARGO) fmt --check
