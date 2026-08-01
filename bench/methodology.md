@@ -5,14 +5,15 @@ same workload, through the same C header, in the same process shape. It is meant
 to be re-runnable by someone who has never seen this repository.
 
 **Headline, stated up front so nobody has to dig for it: at pure parsing the Rust
-port is slower than C on five of eight corpus files and faster on three, spanning
-0.87x to 1.22x. It starts a process slightly slower (1.09x on the minimum, from a
-binary 119x larger) and uses more memory. It is faster at pretty-printing, in
-places by a lot, for a reason explained below that is mostly not about decoding.
-Both halves are in `results.json`; neither was dropped.** See [Results](#results).
+port is slower than C on four of eight corpus files and faster on the other four,
+spanning 0.84x to 1.23x, mean 1.014. It starts a process slightly slower (1.10x on
+the minimum, from a binary 119x larger) and uses more memory. It is faster at
+pretty-printing, in places by a lot, for a reason explained below that is mostly
+not about decoding. Both halves are in `results.json`; neither was dropped.** See
+[Results](#results).
 
 An earlier run of this same benchmark had parsing 1.23x-1.83x slower on all eight
-files, and that number was published here for a day. The cause and the fix are in
+files, and that number was published here for a day. The cause and the fixes are in
 [Where Rust loses](#where-rust-loses); the old figures are kept below rather than
 quietly overwritten.
 
@@ -44,7 +45,7 @@ cc -O2 -Wall -Wextra -std=c99 -I crates/cbor-ffi/include bench/driver.c \
 ```
 
 The include path is ours, not upstream's, and that is safe because the two are
-byte-identical — `crates/cbor-ffi/include/{cbor.h,cborjson.h,cborinternal_p.h,
+byte-identical: `crates/cbor-ffi/include/{cbor.h,cborjson.h,cborinternal_p.h,
 compilersupport_p.h,tinycbor-export.h,tinycbor-version.h}` all `cmp` clean
 against upstream's `src/` and generated `build-ref/`. `build.sh` re-checks
 `cbor.h` and `cborjson.h` on every build and refuses to link if they have
@@ -73,21 +74,21 @@ At the time of the recorded run all eight files match byte for byte.
 
 Three things, and one deliberate omission.
 
-**Startup** — `hyperfine -N --warmup 10 --runs 200` over
+**Startup**: `hyperfine -N --warmup 10 --runs 200` over
 `driver parse corpus/small_ints.cbor 1`. The 58-byte input makes the CBOR work
 negligible, so what is left is `execve`, the loader, runtime init, and one
 trivial parse. `-N` skips the intermediate shell. Percentiles are computed from
 hyperfine's per-run times in its `--export-json` output, not from the mean it
 prints on screen.
 
-**Throughput** — the driver times each repetition individually with
+**Throughput**: the driver times each repetition individually with
 `CLOCK_MONOTONIC` and prints every sample, so `run.py` can take percentiles over
 real measurements. Two modes:
 
-- `pretty` — `cbor_parser_init` then `cbor_value_to_pretty_advance(devnull, &it)`.
+- `pretty`: `cbor_parser_init` then `cbor_value_to_pretty_advance(devnull, &it)`.
   This is the workload the task calls for. It touches every input byte and
   produces output, so its MB/s figure is a true bytes-consumed rate.
-- `parse` — `cbor_parser_init` then `cbor_value_advance(&it)`, which walks the
+- `parse`: `cbor_parser_init` then `cbor_value_advance(&it)`, which walks the
   whole document structurally with no output. **This is a structural traversal
   rate, not a bytes-consumed rate:** `cbor_value_advance` skips over text and
   byte string payloads by adding their length rather than reading them. For
@@ -96,7 +97,7 @@ real measurements. Two modes:
   the two builds means anything. It is kept because it is the only view that
   isolates the parser from `stdio`.
 
-**Peak RSS** — `VmHWM` from `/proc/self/status`, read after the timed loop.
+**Peak RSS**: `VmHWM` from `/proc/self/status`, read after the timed loop.
 
 `/usr/bin/time -v` is not installed on this machine, so the obvious substitute
 was `getrusage(RUSAGE_SELF).ru_maxrss`. **That was tried and rejected as wrong.**
@@ -113,7 +114,7 @@ getrusage kib: 43128
 
 A 17x swing that has nothing to do with the program being measured. The first
 full run of this benchmark reported RSS figures climbing from 22 MB to 38 MB
-across the corpus, identical for both builds — that was the Python harness's own
+across the corpus, identical for both builds, which was the Python harness's own
 footprint, not tinycbor's. `VmHWM` lives in the `mm`, which `execve` replaces, so
 it is immune; it reads 1640 KiB from a shell and 1632 KiB from the fat parent.
 
@@ -152,8 +153,8 @@ undone deliberately rather than by oversight.
 
 ### Sample counts
 
-Sample counts are recorded per entry as `samples`. They vary enormously by design
-— 180,000 for `parse` on the 58-byte file, 180 for `pretty` on the large ones,
+Sample counts are recorded per entry as `samples`. They vary enormously by design:
+180,000 for `parse` on the 58-byte file, 180 for `pretty` on the large ones,
 because a rep there costs 20-30 ms. **p99 on the slow `pretty` entries therefore
 rests on ~180 samples and is the second-worst observation, not a smooth tail
 estimate.** p50 is solid everywhere; treat the slow-file p99s as indicative.
@@ -161,7 +162,7 @@ estimate.** p50 is solid everywhere; treat the slow-file p99s as indicative.
 ### Timer overhead
 
 The driver measures the cost of one back-to-back `clock_gettime` pair (best of
-1000) and reports it as `timer_overhead_ns` — about 14 ns here. On
+1000) and reports it as `timer_overhead_ns`, about 14 ns here. On
 `small_ints.cbor`, where a `parse` rep is ~180 ns, that is a ~7% tax. It applies
 identically to both builds so it never flips a winner, but it does compress the
 ratio toward 1.0. Treat `small_ints.cbor` as a latency-floor probe rather than a
@@ -178,7 +179,7 @@ Recorded automatically into `results.json` under `environment`:
   and it is the main reason p99 is noisier than p50 here.
 - Kernel `7.0.12+kali-amd64`, `cc (Debian 15.3.0-1) 15.3.0`, `rustc 1.97.1`
 - **1-minute load average during the recorded run: 2.63 on 8 cores.** This box
-  was not idle — a browser and other user processes were running throughout. The
+  was not idle: a browser and other user processes were running throughout. The
   p50 ratios reproduced to within a few percent across two independent full runs
   against the same archive, so the conclusions hold, but the absolute nanosecond
   figures and especially the p99s would be better on a quiet machine. If you
@@ -220,7 +221,7 @@ Total runtime is about 40 seconds. `bench/run.py` prints a table as it goes and
 finishes by listing every measurement where Rust is slower.
 
 If your upstream checkout is not at `/home/keir/tinycbor-upstream`, set
-`TINYCBOR_UPSTREAM` — it is used only for the header parity assertion, since the
+`TINYCBOR_UPSTREAM`. It is used only for the header parity assertion, since the
 reference archive itself is vendored at `bench/reference/libtinycbor-upstream.a`.
 
 Individual measurements can be run by hand:
@@ -252,33 +253,63 @@ they are the pretty-printer's worst cases, not because they favour anyone.
 
 ## Results
 
-Recorded run: `results.json`, linked at `2026-08-01T03:37:03Z`,
-`environment.libs_as_linked.rust.sha256` = `cc00319144bf13fa...`, both archives
-`matches_current_tree: true`. 1-minute load average during the run: **2.16**
+Recorded run: `results.json`, linked at `2026-08-01T05:34:58Z`,
+`environment.libs_as_linked.rust.sha256` = `56f98a76dce4c13d...`, both archives
+`matches_current_tree: true`. 1-minute load average during the run: **1.38**
 on 8 cores. `rust_vs_c_p50` is `rust / c`, so **greater than 1.0 means the Rust
 port is slower**.
 
 ### Where Rust loses
 
-**`parse` mode -- structural traversal, no output. Rust is slower on five of the
-eight files and faster on three.**
+**`parse` mode -- structural traversal, no output. Rust is slower on four of the
+eight files and faster on the other four.**
 
 | file | C p50 | Rust p50 | p50 ratio | p99 ratio |
 |---|---:|---:|---:|---:|
-| `deep_nest.cbor` | 2,106,189 ns | 2,575,468 ns | **1.22x slower** | 1.03x |
-| `map_heavy.cbor` | 885,312 ns | 996,951 ns | **1.13x slower** | 1.05x |
-| `text_utf8.cbor` | 6,160 ns | 6,826 ns | **1.11x slower** | 1.06x |
-| `bytes_heavy.cbor` | 24,162 ns | 25,275 ns | **1.05x slower** | 0.98x |
-| `tagged.cbor` | 162,547 ns | 163,145 ns | **1.00x slower** | 0.97x |
-| `indefinite.cbor` | 429,126 ns | 414,998 ns | **0.97x faster** | 0.90x |
-| `flat_array.cbor` | 972,885 ns | 929,512 ns | **0.96x faster** | 0.99x |
-| `small_ints.cbor` | 187 ns | 163 ns | **0.87x faster** | 1.00x |
+| `deep_nest.cbor` | 2,036,300 ns | 2,498,615 ns | **1.23x slower** | 1.19x |
+| `map_heavy.cbor` | 850,435 ns | 922,471 ns | **1.08x slower** | 0.91x |
+| `text_utf8.cbor` | 6,027 ns | 6,435 ns | **1.07x slower** | 1.03x |
+| `bytes_heavy.cbor` | 23,437 ns | 23,978 ns | **1.02x slower** | 1.00x |
+| `tagged.cbor` | 154,000 ns | 153,659 ns | **1.00x faster** | 0.78x |
+| `indefinite.cbor` | 417,955 ns | 391,457 ns | **0.94x faster** | 0.82x |
+| `flat_array.cbor` | 952,528 ns | 888,359 ns | **0.93x faster** | 0.91x |
+| `small_ints.cbor` | 188 ns | 158 ns | **0.84x faster** | 0.92x |
 
-Mean p50 ratio across the eight: **1.038**.
+Mean p50 ratio across the eight: **1.014**.
 
-What remains is concentrated in `deep_nest`, which is the corpus file with the most
-container transitions per byte. That points at `advance_recursive`, which builds a
-fresh `CborValue` per nesting level, rather than at the per-item decode path.
+#### What is left is nesting depth, and it is not instruction count
+
+Everything remaining is concentrated in `deep_nest`, which is 4,000 chains of 40
+nested arrays. Holding the file size at 190 KB and varying only the nesting depth
+makes the shape obvious:
+
+| nesting depth | `parse` p50 ratio |
+|---:|---:|
+| 4 | 0.94 |
+| 8 | 0.91 |
+| 16 | 1.01 |
+| 24 | 1.08 |
+| 32 | 1.15 |
+| 40 | 1.19 |
+| 56 | 1.25 |
+| 80 | 1.23 |
+
+This port is *faster* than the C on shallow documents and loses ground as nesting
+grows, crossing over around depth 16 and flattening out past 56.
+
+It is not doing more work. Under callgrind at depth 80 the two run 48.0 M and
+47.6 M instructions, a gap of 0.83%, for a 23% difference in wall clock. At depth 8
+the instruction gap is *larger* (1.9%) and this port is 9% *faster*. Branch
+mispredicts are 0.5% against 0.3%, and D1 misses are negligible on both sides, so
+neither explains it either.
+
+What is left is microarchitectural and specific to recursion: `advance_recursive`
+calls itself once per level, and the deeper the chain the more the two
+implementations' frames and returns diverge in cost. Source-level tuning has taken
+this as far as it goes -- the two changes below moved the mean from 1.038 to 1.014
+and left `deep_nest` almost exactly where it was. Anything further would mean
+replacing the recursion with an explicit stack, which is a different algorithm from
+the one being ported, and this port's whole claim is that it is the same one.
 
 #### How this number moved, and why
 
@@ -292,6 +323,7 @@ machine and the same corpus:
 | `9687b6a7...` | 1.17x - 1.83x, 8 of 8 slower |
 | `a936412f...` | 1.23x - 1.83x, 8 of 8 slower |
 | `cc003191...` (after `39e5be5 perf(parser): monomorphise on the byte source`) | 0.87x - 1.22x, 5 of 8 slower |
+| `56f98a76...` (after `e8a3e44` and `ec8300f`, below) | 0.84x - 1.23x, 4 of 8 slower |
 
 The callback-driven source refactor named above as "the obvious suspect" was in
 fact the cause. It made every read test `parser->flags & ExternalSource` first,
@@ -310,23 +342,34 @@ are the same specialisation decided by the type system instead of the optimiser.
 Making the byte source a type parameter took the mean from 1.492 to 1.038 for
 4,128 bytes of extra `.text`. See `decisions.md` entry 13.
 
+Two later changes took it from 1.038 to 1.014, both found by reading the generated
+code rather than by guessing:
+
+- `e8a3e44` -- `advance_recursive` opened with `is_fixed_type` then `is_container`,
+  which LLVM compiled into a rotate and a bit-table lookup: thirteen instructions
+  and three branches. The two classes it is testing for are each a pair of major
+  types differing only in bit 5, so masking that bit off makes each one a single
+  comparison. Five instructions, two branches, and it is what GCC emits from the
+  same source.
+- `ec8300f` -- the string branch's six-argument call needed registers that
+  `advance_recursive` then had to save and restore on every level of the descent.
+  Behind `#[inline(never)]` the frame drops from 48 bytes to 32.
+
 **Startup is still a small loss:**
 
 | | C | Rust | ratio |
 |---|---:|---:|---:|
-| p50 | 960,361 ns | 919,596 ns | 0.96x |
-| p99 | 1,827,085 ns | 1,505,998 ns | 0.82x |
-| min | 707,651 ns | 770,811 ns | **1.09x slower** |
-| binary size | 43,856 B | 5,202,248 B | **119x larger** |
+| p50 | 743,485 ns | 803,518 ns | **1.08x slower** |
+| p99 | 1,084,971 ns | 1,279,342 ns | 1.18x |
+| min | 688,391 ns | 756,920 ns | **1.10x slower** |
+| binary size | 43,856 B | 5,202,432 B | **119x larger** |
 
-The p50 and p99 here say Rust starts *faster*, and that is measurement noise, not a
-result: process startup is dominated by whatever else the machine is doing, and the
-C side caught more of it this run. The minimum is the honest column for a
-fixed-cost measurement, and it says Rust is 1.09x slower, consistent with the
-earlier run's 1.10x. Reported this way round rather than taking the flattering
-number.
+The minimum is the column to read for a fixed cost like this, and across three runs
+on different machine load it has said 1.09x, 1.10x and 1.10x. One of those runs had
+p50 and p99 showing Rust *faster*, which was the C side catching more of the
+machine's noise, not a result.
 
-Linking a Rust staticlib pulls in the Rust standard library: ~63 us more to start
+Linking a Rust staticlib pulls in the Rust standard library: ~69 us more to start
 and a binary two orders of magnitude bigger. Irrelevant for a long-lived process;
 not irrelevant for a CLI invoked in a loop, or for firmware, which is a
 substantial part of tinycbor's actual audience.
@@ -335,9 +378,9 @@ substantial part of tinycbor's actual audience.
 
 | | C | Rust |
 |---|---:|---:|
-| `parse`, range across corpus | 1,820 - 2,580 KiB | 2,196 - 2,972 KiB |
-| `pretty`, range across corpus | 1,936 - 2,392 KiB | 2,556 - 4,116 KiB |
-| `pretty`, worst ratio (`bytes_heavy.cbor`) | 2,392 KiB | 4,116 KiB (**1.72x**) |
+| `parse`, range across corpus | 1,824 - 2,624 KiB | 2,256 - 3,108 KiB |
+| `pretty`, range across corpus | 1,924 - 2,456 KiB | 2,552 - 4,120 KiB |
+| `pretty`, worst ratio (`bytes_heavy.cbor`) | 2,456 KiB | 4,120 KiB (**1.68x**) |
 
 Both figures include the input buffer and the driver's timing array, so the
 absolute numbers are upper bounds -- but the delta is real and one-directional.
