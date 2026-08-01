@@ -4,12 +4,17 @@ This measures the Rust port of tinycbor against the upstream C library on the
 same workload, through the same C header, in the same process shape. It is meant
 to be re-runnable by someone who has never seen this repository.
 
-**Headline, stated up front so nobody has to dig for it: the Rust port is slower
-than C at pure parsing on every single corpus file -- between 1.23x and 1.83x --
-slower to start a process (1.08x, from a binary 119x larger), and uses more memory.
-It is faster at pretty-printing, in places by a lot, for a reason explained below
-that is mostly not about decoding. Both halves are in `results.json`; neither was
-dropped.** See [Results](#results).
+**Headline, stated up front so nobody has to dig for it: at pure parsing the Rust
+port is slower than C on five of eight corpus files and faster on three, spanning
+0.87x to 1.22x. It starts a process slightly slower (1.09x on the minimum, from a
+binary 119x larger) and uses more memory. It is faster at pretty-printing, in
+places by a lot, for a reason explained below that is mostly not about decoding.
+Both halves are in `results.json`; neither was dropped.** See [Results](#results).
+
+An earlier run of this same benchmark had parsing 1.23x-1.83x slower on all eight
+files, and that number was published here for a day. The cause and the fix are in
+[Where Rust loses](#where-rust-loses); the old figures are kept below rather than
+quietly overwritten.
 
 ---
 
@@ -247,56 +252,81 @@ they are the pretty-printer's worst cases, not because they favour anyone.
 
 ## Results
 
-Recorded run: `results.json`, linked at `2026-07-31T19:52:10Z`, `environment.libs_as_linked.rust.sha256` = `a936412fb907ed9f...`, both archives
-`matches_current_tree: true`. 1-minute load average during the run: **4.45**
+Recorded run: `results.json`, linked at `2026-08-01T03:37:03Z`,
+`environment.libs_as_linked.rust.sha256` = `cc00319144bf13fa...`, both archives
+`matches_current_tree: true`. 1-minute load average during the run: **2.16**
 on 8 cores. `rust_vs_c_p50` is `rust / c`, so **greater than 1.0 means the Rust
 port is slower**.
 
 ### Where Rust loses
 
-**`parse` mode -- structural traversal, no output. Rust is slower on all eight
-files, with no exceptions and no ties.**
+**`parse` mode -- structural traversal, no output. Rust is slower on five of the
+eight files and faster on three.**
 
 | file | C p50 | Rust p50 | p50 ratio | p99 ratio |
 |---|---:|---:|---:|---:|
-| `map_heavy.cbor` | 919,484 ns | 1,682,853 ns | **1.83x slower** | 2.07x |
-| `text_utf8.cbor` | 6,456 ns | 11,120 ns | **1.72x slower** | 1.76x |
-| `tagged.cbor` | 166,485 ns | 268,328 ns | **1.61x slower** | 1.64x |
-| `indefinite.cbor` | 447,059 ns | 672,631 ns | **1.50x slower** | 1.59x |
-| `bytes_heavy.cbor` | 25,497 ns | 38,062 ns | **1.49x slower** | 1.60x |
-| `deep_nest.cbor` | 2,151,374 ns | 3,208,669 ns | **1.49x slower** | 1.70x |
-| `small_ints.cbor` | 192 ns | 261 ns | **1.36x slower** | 1.35x |
-| `flat_array.cbor` | 976,365 ns | 1,202,048 ns | **1.23x slower** | 1.34x |
+| `deep_nest.cbor` | 2,106,189 ns | 2,575,468 ns | **1.22x slower** | 1.03x |
+| `map_heavy.cbor` | 885,312 ns | 996,951 ns | **1.13x slower** | 1.05x |
+| `text_utf8.cbor` | 6,160 ns | 6,826 ns | **1.11x slower** | 1.06x |
+| `bytes_heavy.cbor` | 24,162 ns | 25,275 ns | **1.05x slower** | 0.98x |
+| `tagged.cbor` | 162,547 ns | 163,145 ns | **1.00x slower** | 0.97x |
+| `indefinite.cbor` | 429,126 ns | 414,998 ns | **0.97x faster** | 0.90x |
+| `flat_array.cbor` | 972,885 ns | 929,512 ns | **0.96x faster** | 0.99x |
+| `small_ints.cbor` | 187 ns | 163 ns | **0.87x faster** | 1.00x |
 
-The regression is worst where the document has many small items and many container
-transitions (`map_heavy`, `tagged`) and mildest on the flat integer array, which
-points at fixed per-item overhead rather than a slow inner loop on any one type.
-p99 tracks p50, so this is systematic cost, not tail latency.
+Mean p50 ratio across the eight: **1.038**.
 
-This regression **widened during the benchmarking session** as work landed in
-parallel. Measured against successive builds of the archive on the same machine
-and the same corpus:
+What remains is concentrated in `deep_nest`, which is the corpus file with the most
+container transitions per byte. That points at `advance_recursive`, which builds a
+fresh `CborValue` per nesting level, rather than at the per-item decode path.
+
+#### How this number moved, and why
+
+It was much worse. Measured against successive builds of the archive on the same
+machine and the same corpus:
 
 | archive | `parse` p50 ratio range |
 |---|---|
 | `2883526a...` | 1.00x - 1.30x, 6 of 8 files slower |
 | `0eed29dd...` (after `3064ad2 feat(parser): callback-driven sources`) | 1.21x - 1.50x, 8 of 8 slower |
 | `9687b6a7...` | 1.17x - 1.83x, 8 of 8 slower |
-| recorded run | see table above, 8 of 8 slower |
+| `a936412f...` | 1.23x - 1.83x, 8 of 8 slower |
+| `cc003191...` (after `39e5be5 perf(parser): monomorphise on the byte source`) | 0.87x - 1.22x, 5 of 8 slower |
 
-The callback-driven source refactor is the obvious suspect and is where a profile
-should start.
+The callback-driven source refactor named above as "the obvious suspect" was in
+fact the cause. It made every read test `parser->flags & ExternalSource` first,
+which upstream also does -- the difference is that GCC at `-O3` clones the callers
+and folds that test away. Two flags confirm which pass:
 
-**Startup is also a loss:**
+| upstream build | `parse` p50 vs stock `-O3` |
+|---|---|
+| `-O3 -fno-strict-aliasing` | 0.99x (no effect) |
+| `-O3 -fno-ipa-cp-clone` | 1.17x slower |
+| `-O2 -finline-functions` | 1.34x slower |
+
+So it is interprocedural constant propagation with cloning, not type-based alias
+analysis and not inlining alone. Rust has no such pass, but it has generics, which
+are the same specialisation decided by the type system instead of the optimiser.
+Making the byte source a type parameter took the mean from 1.492 to 1.038 for
+4,128 bytes of extra `.text`. See `decisions.md` entry 13.
+
+**Startup is still a small loss:**
 
 | | C | Rust | ratio |
 |---|---:|---:|---:|
-| p50 | 775,821 ns | 840,694 ns | **1.08x slower** |
-| p99 | 1,204,296 ns | 1,272,817 ns | 1.06x |
-| min | 697,581 ns | 769,719 ns | 1.10x |
-| binary size | 43,856 B | 5,197,416 B | **119x larger** |
+| p50 | 960,361 ns | 919,596 ns | 0.96x |
+| p99 | 1,827,085 ns | 1,505,998 ns | 0.82x |
+| min | 707,651 ns | 770,811 ns | **1.09x slower** |
+| binary size | 43,856 B | 5,202,248 B | **119x larger** |
 
-Linking a Rust staticlib pulls in the Rust standard library: ~100 us more to start
+The p50 and p99 here say Rust starts *faster*, and that is measurement noise, not a
+result: process startup is dominated by whatever else the machine is doing, and the
+C side caught more of it this run. The minimum is the honest column for a
+fixed-cost measurement, and it says Rust is 1.09x slower, consistent with the
+earlier run's 1.10x. Reported this way round rather than taking the flattering
+number.
+
+Linking a Rust staticlib pulls in the Rust standard library: ~63 us more to start
 and a binary two orders of magnitude bigger. Irrelevant for a long-lived process;
 not irrelevant for a CLI invoked in a loop, or for firmware, which is a
 substantial part of tinycbor's actual audience.
@@ -305,9 +335,9 @@ substantial part of tinycbor's actual audience.
 
 | | C | Rust |
 |---|---:|---:|
-| `parse`, range across corpus | 1,820 - 2,548 KiB | 2,232 - 2,824 KiB |
-| `pretty`, range across corpus | 1,876 - 2,456 KiB | 2,596 - 4,116 KiB |
-| `pretty`, worst ratio (`text_utf8.cbor`) | 2,328 KiB | 3,916 KiB (**1.68x**) |
+| `parse`, range across corpus | 1,820 - 2,580 KiB | 2,196 - 2,972 KiB |
+| `pretty`, range across corpus | 1,936 - 2,392 KiB | 2,556 - 4,116 KiB |
+| `pretty`, worst ratio (`bytes_heavy.cbor`) | 2,392 KiB | 4,116 KiB (**1.72x**) |
 
 Both figures include the input buffer and the driver's timing array, so the
 absolute numbers are upper bounds -- but the delta is real and one-directional.
