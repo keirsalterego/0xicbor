@@ -5,9 +5,9 @@ same workload, through the same C header, in the same process shape. It is meant
 to be re-runnable by someone who has never seen this repository.
 
 **Headline, stated up front so nobody has to dig for it: at pure parsing the Rust
-port is slower than C on four of eight corpus files and faster on the other four,
-spanning 0.84x to 1.23x, mean 1.014. It starts a process slightly slower (1.10x on
-the minimum, from a binary 119x larger) and uses more memory. It is faster at
+port is faster than C on five of eight corpus files and slower on three, spanning
+0.82x to 1.19x, mean 0.984. It starts a process slightly slower (1.11x on the
+minimum, from a binary 119x larger) and uses more memory. It is faster at
 pretty-printing, in places by a lot, for a reason explained below that is mostly
 not about decoding. Both halves are in `results.json`; neither was dropped.** See
 [Results](#results).
@@ -253,29 +253,29 @@ they are the pretty-printer's worst cases, not because they favour anyone.
 
 ## Results
 
-Recorded run: `results.json`, linked at `2026-08-01T05:34:58Z`,
-`environment.libs_as_linked.rust.sha256` = `56f98a76dce4c13d...`, both archives
-`matches_current_tree: true`. 1-minute load average during the run: **1.38**
+Recorded run: `results.json`, linked at `2026-08-01T05:46:28Z`,
+`environment.libs_as_linked.rust.sha256` = `4428fd94031f3bac...`, both archives
+`matches_current_tree: true`. 1-minute load average during the run: **1.86**
 on 8 cores. `rust_vs_c_p50` is `rust / c`, so **greater than 1.0 means the Rust
 port is slower**.
 
 ### Where Rust loses
 
-**`parse` mode -- structural traversal, no output. Rust is slower on four of the
-eight files and faster on the other four.**
+**`parse` mode -- structural traversal, no output. Rust is faster on five of the
+eight files and slower on three.**
 
 | file | C p50 | Rust p50 | p50 ratio | p99 ratio |
 |---|---:|---:|---:|---:|
-| `deep_nest.cbor` | 2,036,300 ns | 2,498,615 ns | **1.23x slower** | 1.19x |
-| `map_heavy.cbor` | 850,435 ns | 922,471 ns | **1.08x slower** | 0.91x |
-| `text_utf8.cbor` | 6,027 ns | 6,435 ns | **1.07x slower** | 1.03x |
-| `bytes_heavy.cbor` | 23,437 ns | 23,978 ns | **1.02x slower** | 1.00x |
-| `tagged.cbor` | 154,000 ns | 153,659 ns | **1.00x faster** | 0.78x |
-| `indefinite.cbor` | 417,955 ns | 391,457 ns | **0.94x faster** | 0.82x |
-| `flat_array.cbor` | 952,528 ns | 888,359 ns | **0.93x faster** | 0.91x |
-| `small_ints.cbor` | 188 ns | 158 ns | **0.84x faster** | 0.92x |
+| `deep_nest.cbor` | 2,146,157 ns | 2,549,915 ns | **1.19x slower** | 1.04x |
+| `map_heavy.cbor` | 913,162 ns | 942,348 ns | **1.03x slower** | 0.92x |
+| `text_utf8.cbor` | 6,314 ns | 6,456 ns | **1.02x slower** | 0.95x |
+| `tagged.cbor` | 162,471 ns | 158,842 ns | **0.98x faster** | 0.98x |
+| `bytes_heavy.cbor` | 24,810 ns | 24,165 ns | **0.97x faster** | 0.97x |
+| `flat_array.cbor` | 964,159 ns | 912,632 ns | **0.95x faster** | 0.86x |
+| `indefinite.cbor` | 438,886 ns | 399,675 ns | **0.91x faster** | 0.85x |
+| `small_ints.cbor` | 192 ns | 157 ns | **0.82x faster** | 0.53x |
 
-Mean p50 ratio across the eight: **1.014**.
+Mean p50 ratio across the eight: **0.984**.
 
 #### What is left is nesting depth, and it is not instruction count
 
@@ -306,7 +306,7 @@ neither explains it either.
 What is left is microarchitectural and specific to recursion: `advance_recursive`
 calls itself once per level, and the deeper the chain the more the two
 implementations' frames and returns diverge in cost. Source-level tuning has taken
-this as far as it goes -- the two changes below moved the mean from 1.038 to 1.014
+this as far as it goes -- the three changes below moved the mean from 1.038 to 0.984
 and left `deep_nest` almost exactly where it was. Anything further would mean
 replacing the recursion with an explicit stack, which is a different algorithm from
 the one being ported, and this port's whole claim is that it is the same one.
@@ -324,6 +324,7 @@ machine and the same corpus:
 | `a936412f...` | 1.23x - 1.83x, 8 of 8 slower |
 | `cc003191...` (after `39e5be5 perf(parser): monomorphise on the byte source`) | 0.87x - 1.22x, 5 of 8 slower |
 | `56f98a76...` (after `e8a3e44` and `ec8300f`, below) | 0.84x - 1.23x, 4 of 8 slower |
+| `4428fd94...` (after `b952b7d`, below) | 0.82x - 1.19x, **3 of 8 slower** |
 
 The callback-driven source refactor named above as "the obvious suspect" was in
 fact the cause. It made every read test `parser->flags & ExternalSource` first,
@@ -342,8 +343,8 @@ are the same specialisation decided by the type system instead of the optimiser.
 Making the byte source a type parameter took the mean from 1.492 to 1.038 for
 4,128 bytes of extra `.text`. See `decisions.md` entry 13.
 
-Two later changes took it from 1.038 to 1.014, both found by reading the generated
-code rather than by guessing:
+Three later changes took it from 1.038 to 0.984, all found by reading the generated
+code or the profile rather than by guessing:
 
 - `e8a3e44` -- `advance_recursive` opened with `is_fixed_type` then `is_container`,
   which LLVM compiled into a rotate and a bit-table lookup: thirteen instructions
@@ -354,22 +355,28 @@ code rather than by guessing:
 - `ec8300f` -- the string branch's six-argument call needed registers that
   `advance_recursive` then had to save and restore on every level of the descent.
   Behind `#[inline(never)]` the frame drops from 48 bytes to 32.
+- `b952b7d` -- the same specialisation problem as the byte source, one level down.
+  `iterate_string_chunks` took measure-or-copy-or-compare as a runtime enum, so the
+  branch sat inside the chunk loop. Upstream passes it as a value too and GCC clones
+  the walker per call site; the profile shows `iterate_string_chunks.constprop.0`
+  doing exactly that. Three types implementing one trait moved the choice to the
+  call site.
 
 **Startup is still a small loss:**
 
 | | C | Rust | ratio |
 |---|---:|---:|---:|
-| p50 | 743,485 ns | 803,518 ns | **1.08x slower** |
-| p99 | 1,084,971 ns | 1,279,342 ns | 1.18x |
-| min | 688,391 ns | 756,920 ns | **1.10x slower** |
-| binary size | 43,856 B | 5,202,432 B | **119x larger** |
+| p50 | 787,198 ns | 824,864 ns | **1.05x slower** |
+| p99 | 1,161,505 ns | 1,240,973 ns | 1.07x |
+| min | 686,276 ns | 763,433 ns | **1.11x slower** |
+| binary size | 43,856 B | 5,203,024 B | **119x larger** |
 
-The minimum is the column to read for a fixed cost like this, and across three runs
-on different machine load it has said 1.09x, 1.10x and 1.10x. One of those runs had
+The minimum is the column to read for a fixed cost like this, and across four runs
+on different machine load it has said 1.09x, 1.10x, 1.10x and 1.11x. One of those runs had
 p50 and p99 showing Rust *faster*, which was the C side catching more of the
 machine's noise, not a result.
 
-Linking a Rust staticlib pulls in the Rust standard library: ~69 us more to start
+Linking a Rust staticlib pulls in the Rust standard library: ~77 us more to start
 and a binary two orders of magnitude bigger. Irrelevant for a long-lived process;
 not irrelevant for a CLI invoked in a loop, or for firmware, which is a
 substantial part of tinycbor's actual audience.
@@ -378,9 +385,9 @@ substantial part of tinycbor's actual audience.
 
 | | C | Rust |
 |---|---:|---:|
-| `parse`, range across corpus | 1,824 - 2,624 KiB | 2,256 - 3,108 KiB |
-| `pretty`, range across corpus | 1,924 - 2,456 KiB | 2,552 - 4,120 KiB |
-| `pretty`, worst ratio (`bytes_heavy.cbor`) | 2,456 KiB | 4,120 KiB (**1.68x**) |
+| `parse`, range across corpus | 1,872 - 2,700 KiB | 2,200 - 3,068 KiB |
+| `pretty`, range across corpus | 1,940 - 2,396 KiB | 2,552 - 4,036 KiB |
+| `pretty`, worst ratio (`bytes_heavy.cbor`) | 2,392 KiB | 4,036 KiB (**1.69x**) |
 
 Both figures include the input buffer and the driver's timing array, so the
 absolute numbers are upper bounds -- but the delta is real and one-directional.
