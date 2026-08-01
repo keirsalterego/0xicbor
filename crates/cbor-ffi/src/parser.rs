@@ -300,6 +300,13 @@ macro_rules! dispatch {
             <Buffer as Source>::$m($($arg),*)
         }
     };
+    ($it:expr, $f:ident<$extra:ty>($($arg:expr),* $(,)?)) => {
+        if external($it) {
+            $f::<Reader, $extra>($($arg),*)
+        } else {
+            $f::<Buffer, $extra>($($arg),*)
+        }
+    };
     ($it:expr, $f:ident($($arg:expr),* $(,)?)) => {
         if external($it) {
             $f::<Reader>($($arg),*)
@@ -604,14 +611,7 @@ fn skip_string<S: Source>(it: &mut CborValue) -> c_int {
     let out: *mut CborValue = it;
     let mut len = usize::MAX;
     let mut all = false;
-    iterate_string_chunks::<S>(
-        it,
-        core::ptr::null_mut(),
-        &mut len,
-        &mut all,
-        Some(out),
-        Iterate::Noop,
-    )
+    iterate_string_chunks::<S, Measure>(it, core::ptr::null_mut(), &mut len, &mut all, Some(out))
 }
 
 fn advance_recursive<S: Source>(it: &mut CborValue, nesting: i32) -> c_int {
@@ -845,14 +845,51 @@ pub extern "C" fn cbor_value_get_half_float_as_float(
 // fit" flag are subtle, and three separate implementations would drift.
 
 /// What to do with each chunk as it is walked.
-#[derive(Clone, Copy, PartialEq)]
-enum Iterate {
-    /// Measure only; `buffer` is ignored.
-    Noop,
-    /// Copy into `buffer` at the running offset.
-    Copy,
-    /// Compare against `buffer` at the running offset.
-    Compare,
+///
+/// A type rather than an enum for the same reason [`Source`] is: upstream
+/// passes the operation as a value and GCC clones the walker per call site, so
+/// the branch never survives into the loop. Ours did survive, and the walk is
+/// where a string-heavy document spends most of its time. Three types instead
+/// of three variants moves the choice to the call site.
+trait Op {
+    /// Applies this operation to one chunk and reports whether it succeeded.
+    ///
+    /// SAFETY: `dst + offset .. + len` must be writable for a copy and readable
+    /// for a comparison, and `src .. src + len` readable. Both are checked by
+    /// the caller.
+    unsafe fn apply(dst: *mut u8, offset: usize, src: *const u8, len: usize) -> bool;
+}
+
+/// Measure only; `buffer` is ignored.
+struct Measure;
+
+/// Copy into `buffer` at the running offset.
+struct CopyOut;
+
+/// Compare against `buffer` at the running offset.
+struct CompareTo;
+
+impl Op for Measure {
+    #[inline(always)]
+    unsafe fn apply(_dst: *mut u8, _offset: usize, _src: *const u8, _len: usize) -> bool {
+        true
+    }
+}
+
+impl Op for CopyOut {
+    #[inline(always)]
+    unsafe fn apply(dst: *mut u8, offset: usize, src: *const u8, len: usize) -> bool {
+        core::ptr::copy_nonoverlapping(src, dst.add(offset), len);
+        true
+    }
+}
+
+impl Op for CompareTo {
+    #[inline(always)]
+    unsafe fn apply(dst: *mut u8, offset: usize, src: *const u8, len: usize) -> bool {
+        core::slice::from_raw_parts(dst.add(offset) as *const u8, len)
+            == core::slice::from_raw_parts(src, len)
+    }
 }
 
 /// Walks a string, definite or chunked, applying `op` to every chunk.
@@ -864,13 +901,12 @@ enum Iterate {
 /// A NUL is written only when there is room *beyond* the content (`buflen >
 /// total`, strictly). For `Compare` that NUL check is what stops a prefix from
 /// comparing equal to a longer expected string.
-fn iterate_string_chunks<S: Source>(
+fn iterate_string_chunks<S: Source, O: Op>(
     value: &CborValue,
     buffer: *mut u8,
     buflen: &mut usize,
     result: &mut bool,
     next: Option<*mut CborValue>,
-    op: Iterate,
 ) -> c_int {
     let mut cursor = clone(value);
     *result = true;
@@ -899,7 +935,7 @@ fn iterate_string_chunks<S: Source>(
         if *result && *buflen >= new_total {
             // SAFETY: the chunk API returned this range, and the bounds check
             // above proved the destination has room for it.
-            *result = unsafe { apply(op, buffer, total, ptr as *const u8, chunk_len) };
+            *result = unsafe { O::apply(buffer, total, ptr as *const u8, chunk_len) };
         } else {
             *result = false;
         }
@@ -908,7 +944,7 @@ fn iterate_string_chunks<S: Source>(
 
     if *result && *buflen > total {
         // SAFETY: `buflen > total` leaves at least one byte spare.
-        *result = unsafe { apply(op, buffer, total, [0u8].as_ptr(), 1) };
+        *result = unsafe { O::apply(buffer, total, [0u8].as_ptr(), 1) };
     }
     *buflen = total;
 
@@ -919,22 +955,6 @@ fn iterate_string_chunks<S: Source>(
         unsafe { *n = cursor };
     }
     err
-}
-
-/// SAFETY: `dst + offset .. + len` must be writable for `Copy`/readable for
-/// `Compare`, and `src .. src + len` readable. Both are checked by the caller.
-unsafe fn apply(op: Iterate, dst: *mut u8, offset: usize, src: *const u8, len: usize) -> bool {
-    match op {
-        Iterate::Noop => true,
-        Iterate::Copy => {
-            core::ptr::copy_nonoverlapping(src, dst.add(offset), len);
-            true
-        }
-        Iterate::Compare => {
-            core::slice::from_raw_parts(dst.add(offset) as *const u8, len)
-                == core::slice::from_raw_parts(src, len)
-        }
-    }
 }
 
 /// One chunk at the cursor, advancing past it. Split out so
@@ -978,23 +998,25 @@ pub extern "C" fn _cbor_value_copy_string(
     // SAFETY: module contract, plus a writable `buflen`.
     unsafe {
         let mut copied_all = false;
-        let op = if buffer.is_null() {
-            Iterate::Noop
-        } else {
-            Iterate::Copy
-        };
         let v = as_ref(value);
-        let err = dispatch!(
-            v,
-            iterate_string_chunks(
+        let next = if next.is_null() { None } else { Some(next) };
+        // Measuring and copying are the same walk with a different thing done
+        // to each chunk, and which one it is depends on whether the caller gave
+        // us anywhere to put the bytes. Upstream decides that per chunk; here
+        // it is decided once, before the walk starts.
+        let err = if buffer.is_null() {
+            let dst = core::ptr::null_mut();
+            dispatch!(
                 v,
-                buffer as *mut u8,
-                &mut *buflen,
-                &mut copied_all,
-                if next.is_null() { None } else { Some(next) },
-                op,
+                iterate_string_chunks<Measure>(v, dst, &mut *buflen, &mut copied_all, next)
             )
-        );
+        } else {
+            let dst = buffer as *mut u8;
+            dispatch!(
+                v,
+                iterate_string_chunks<CopyOut>(v, dst, &mut *buflen, &mut copied_all, next)
+            )
+        };
         if err != NO_ERROR {
             return err;
         }
@@ -1102,14 +1124,7 @@ unsafe fn text_string_equals<S: Source>(
     // the CBOR string is *shorter* than expected, which is exactly the case
     // that has to fail; for equal lengths there is no spare byte and no
     // comparison, and for equal empty strings nothing is compared at all.
-    iterate_string_chunks::<S>(
-        &copy,
-        string as *mut u8,
-        &mut buflen,
-        result,
-        None,
-        Iterate::Compare,
-    )
+    iterate_string_chunks::<S, CompareTo>(&copy, string as *mut u8, &mut buflen, result, None)
 }
 
 #[no_mangle]
@@ -1154,13 +1169,12 @@ unsafe fn map_find_value<S: Source>(
             let mut equals = false;
             let mut buflen = len;
             let out: *mut CborValue = e;
-            let err = iterate_string_chunks::<S>(
+            let err = iterate_string_chunks::<S, CompareTo>(
                 e,
                 string as *mut u8,
                 &mut buflen,
                 &mut equals,
                 Some(out),
-                Iterate::Compare,
             );
             if err != NO_ERROR {
                 e.type_ = TYPE_INVALID;
