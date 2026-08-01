@@ -11,9 +11,8 @@
 //! cursor, and `FILE*` must be an open stream. Same contract as the parser.
 
 use crate::parser::{
-    self, ERR_UNEXPECTED_EOF, NO_ERROR, SMALL_VALUE_MASK, TYPE_ARRAY, TYPE_BOOLEAN,
-    TYPE_BYTE_STRING, TYPE_INTEGER, TYPE_INVALID, TYPE_MAP, TYPE_SIMPLE, TYPE_TAG,
-    TYPE_TEXT_STRING, VALUE_8BIT,
+    self, NO_ERROR, SMALL_VALUE_MASK, TYPE_ARRAY, TYPE_BOOLEAN, TYPE_BYTE_STRING, TYPE_INTEGER,
+    TYPE_INVALID, TYPE_MAP, TYPE_SIMPLE, TYPE_TAG, TYPE_TEXT_STRING, VALUE_8BIT,
 };
 use crate::types::CborValue;
 use cbor_core::fmt::{escape_utf8, format_g};
@@ -33,6 +32,7 @@ const TYPE_FLOAT: u8 = 0xfa;
 const TYPE_DOUBLE: u8 = 0xfb;
 
 const MAX_RECURSIONS: i32 = 1024;
+const ERR_UNKNOWN_TYPE: c_int = 259;
 const ERR_INVALID_UTF8: c_int = 516;
 const ERR_UNSUPPORTED_TYPE: c_int = 1026;
 
@@ -231,7 +231,15 @@ fn value_to_pretty(
             out.push_str(suffix);
         }
 
-        TYPE_INVALID => return ERR_UNEXPECTED_EOF,
+        // Reached when a map ends between a key and its value: the loop in
+        // `container_to_pretty` checks for the end before the key and then
+        // renders the value unconditionally. Upstream prints the word and
+        // reports the type, rather than reporting that the input ran out --
+        // the input did not necessarily run out, the item is simply not there.
+        TYPE_INVALID => {
+            out.push_str("invalid");
+            return ERR_UNKNOWN_TYPE;
+        }
         _ => return ERR_UNSUPPORTED_TYPE,
     }
 
