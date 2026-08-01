@@ -78,7 +78,8 @@ mean anything.
 
 **The fuzzer also found a bug of ours**, and it is worth saying so rather than quoting only
 the clean run. Two runs at 60 and 121 seconds came back clean; a 15-minute run found a
-real divergence at 420,793 executions, on a 1,220-byte input of deeply nested maps. The pretty printer had no
+real divergence at 420,793 executions, on a 1,220-byte input of deeply nested maps.
+The pretty printer had no
 arm for `CborInvalidType` and reported that the input had run out, where upstream
 prints `invalid` and reports the type. It is fixed, the input is a permanent fixture under
 `tests/port/corpus/`, and every later run re-verifies it. The moral is in
