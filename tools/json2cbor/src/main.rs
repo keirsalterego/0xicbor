@@ -63,7 +63,15 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let _ = io::stdout().write_all(&encoder.out);
+    // A C program takes SIGPIPE and dies with status 141 when the reader has
+    // gone away; Rust starts with the signal ignored and gets an error here
+    // instead. Exiting with the same status is as close as this gets without a
+    // signal handler: a shell cannot tell the two apart, and `wait(2)` can.
+    if let Err(e) = io::stdout().write_all(&encoder.out) {
+        if e.kind() == io::ErrorKind::BrokenPipe {
+            std::process::exit(141);
+        }
+    }
     ExitCode::SUCCESS
 }
 

@@ -182,14 +182,30 @@ impl Stdout {
         }
         if let Some(last) = self.pending.iter().rposition(|&b| b == b'\n') {
             let tail = self.pending.split_off(last + 1);
-            let _ = io::stdout().write_all(&self.pending);
+            emit(&self.pending);
             self.pending = tail;
         }
     }
 
     fn flush(&mut self) {
-        let _ = io::stdout().write_all(&self.pending);
+        emit(&self.pending);
         self.pending.clear();
+    }
+}
+
+/// Writes to stdout, ending the process the way a C program ends when the
+/// reader has gone away.
+///
+/// A C program takes SIGPIPE and dies with status 141; Rust starts with the
+/// signal ignored, so the write returns an error instead and `cbordump big |
+/// head` would otherwise succeed. Exiting with the same status is as close as
+/// this gets without a signal handler: a shell cannot tell the two apart, and
+/// `wait(2)` can.
+fn emit(bytes: &[u8]) {
+    if let Err(e) = io::stdout().write_all(bytes) {
+        if e.kind() == io::ErrorKind::BrokenPipe {
+            std::process::exit(141);
+        }
     }
 }
 
