@@ -247,6 +247,56 @@ trait Source {
 /// take the recursive path, which is also where the 1024-level limit lives.
 const FAST_SCAN_DEPTH: usize = 64;
 
+/// One open container during a [`Source::scan_subtree`] walk.
+///
+/// Eight bytes, because this gets copied on every push and pop and the walk is
+/// the whole point. `pending` is a `u32` rather than a `u64` for the same
+/// reason, which costs nothing: a length that does not fit one is rejected
+/// before a level is ever opened, exactly as `enter_container` rejects it.
+#[derive(Clone, Copy)]
+struct Level {
+    /// Items still to get through, when the container gave a length.
+    pending: u32,
+    /// Opened without a length, so it runs until a break.
+    indefinite: bool,
+    map: bool,
+    /// A map that has taken a key and still owes its value. A break here is
+    /// `CborErrorUnexpectedBreak`.
+    mid_pair: bool,
+}
+
+impl Level {
+    /// The item being skipped, before any container has been entered.
+    const TOP: Level = Level {
+        pending: 1,
+        indefinite: false,
+        map: false,
+        mid_pair: false,
+    };
+
+    /// Marks one item of this container done.
+    ///
+    /// Wrapping rather than saturating: on a level that gave a length the
+    /// unwind check has already proved `pending` is not zero, and on one that
+    /// did not, `pending` is never read.
+    #[inline(always)]
+    fn settle(&mut self) {
+        self.pending = self.pending.wrapping_sub(1);
+        self.mid_pair = !self.mid_pair;
+    }
+}
+
+/// Steps `p` over `len` bytes of string payload, or `None` if that would leave
+/// the buffer.
+#[inline(always)]
+fn skip_bytes(p: usize, len: u64, limit: usize) -> Option<usize> {
+    if len > usize::MAX as u64 {
+        return None;
+    }
+    let after = p.checked_add(len as usize)?;
+    (after <= limit).then_some(after)
+}
+
 /// A flat buffer: `CborValue::source` is the cursor and `CborParser::source` is
 /// one past the end.
 struct Buffer;
@@ -301,20 +351,23 @@ impl Source for Buffer {
         let mut p = ptr(it) as usize;
         let limit = end(it) as usize;
 
-        // One entry per open container, holding what its parent still owes.
-        // Nesting is not otherwise interesting here: skipping does not care
-        // about the shape, only about consuming the right number of items.
-        let mut stack = [0u64; FAST_SCAN_DEPTH];
+        // One entry per open container. Nesting is not otherwise interesting
+        // here: skipping does not care about the shape, only about getting
+        // through the right number of items.
+        let mut stack = [Level::TOP; FAST_SCAN_DEPTH];
         let mut depth = 0usize;
-        let mut pending: u64 = 1;
+        let mut cur = Level::TOP;
+        // Set by a tag and cleared by anything else, because a break may not
+        // follow one.
+        let mut after_tag = false;
 
         loop {
-            while pending == 0 {
+            while !cur.indefinite && cur.pending == 0 {
                 if depth == 0 {
                     return Some(p as *mut c_void);
                 }
                 depth -= 1;
-                pending = stack[depth];
+                cur = stack[depth];
             }
 
             if p >= limit {
@@ -323,11 +376,30 @@ impl Source for Buffer {
             // SAFETY: `p < limit` was just checked, and both come from the
             // buffer the parser was initialised with.
             let head = unsafe { *(p as *const u8) };
+            let major = head >> MAJOR_TYPE_SHIFT;
             let ai = head & SMALL_VALUE_MASK;
 
+            if head == BREAK_BYTE {
+                // Closes the innermost container, and only if that container
+                // was opened without a length. A map may not break between a
+                // key and its value, and nothing may break straight after a
+                // tag; both are `preparse_next_value_nodecrement`'s rules.
+                if depth == 0 || !cur.indefinite || after_tag || (cur.map && cur.mid_pair) {
+                    return None;
+                }
+                // The container was already settled against its parent on the
+                // way in, the same as a definite one; closing it only restores
+                // the level below.
+                p += 1;
+                depth -= 1;
+                cur = stack[depth];
+                continue;
+            }
+
             // Additional info 24..27 puts the value in the next 1, 2, 4 or 8
-            // bytes. Below 24 it is the head itself. 28..30 are illegal and 31
-            // is indefinite; both are the general path's problem.
+            // bytes; below 24 it is the head itself; 31 means no length was
+            // given. 28..30 are illegal and stay the general path's problem.
+            let mut indefinite = false;
             let (width, value) = if ai < VALUE_8BIT {
                 (0usize, ai as u64)
             } else if ai <= VALUE_64BIT {
@@ -337,49 +409,87 @@ impl Source for Buffer {
                 }
                 // SAFETY: bounds checked immediately above.
                 (n, unsafe { be_load((p + 1) as *const u8, n) })
+            } else if ai == INDEFINITE_LENGTH && (MAJOR_BYTE_STRING..=MAJOR_MAP).contains(&major) {
+                indefinite = true;
+                (0usize, 0u64)
             } else {
                 return None;
             };
             p += 1 + width;
+            after_tag = false;
 
-            match head >> MAJOR_TYPE_SHIFT {
-                MAJOR_UNSIGNED | MAJOR_NEGATIVE => pending -= 1,
+            match major {
+                MAJOR_UNSIGNED | MAJOR_NEGATIVE => cur.settle(),
 
                 MAJOR_BYTE_STRING | MAJOR_TEXT_STRING => {
-                    if value > usize::MAX as u64 {
-                        return None;
+                    if indefinite {
+                        // A run of definite chunks of the same major type,
+                        // closed by a break. `chunk_size` rejects a chunk of
+                        // the other type or one without a length of its own.
+                        loop {
+                            if p >= limit {
+                                return None;
+                            }
+                            // SAFETY: bounds checked immediately above.
+                            let chunk = unsafe { *(p as *const u8) };
+                            if chunk == BREAK_BYTE {
+                                p += 1;
+                                break;
+                            }
+                            if chunk >> MAJOR_TYPE_SHIFT != major {
+                                return None;
+                            }
+                            let cai = chunk & SMALL_VALUE_MASK;
+                            let (cw, clen) = if cai < VALUE_8BIT {
+                                (0usize, cai as u64)
+                            } else if cai <= VALUE_64BIT {
+                                let n = bytes_needed(cai);
+                                if limit - p < 1 + n {
+                                    return None;
+                                }
+                                // SAFETY: bounds checked immediately above.
+                                (n, unsafe { be_load((p + 1) as *const u8, n) })
+                            } else {
+                                return None;
+                            };
+                            p = skip_bytes(p + 1 + cw, clen, limit)?;
+                        }
+                    } else {
+                        p = skip_bytes(p, value, limit)?;
                     }
-                    let after = p.checked_add(value as usize)?;
-                    if after > limit {
-                        return None;
-                    }
-                    p = after;
-                    pending -= 1;
+                    cur.settle();
                 }
 
                 MAJOR_ARRAY | MAJOR_MAP => {
-                    let is_map = head >> MAJOR_TYPE_SHIFT == MAJOR_MAP;
+                    let map = major == MAJOR_MAP;
                     // The same two rejections `enter_container` makes, so a
                     // length it would call too large is never quietly skipped.
-                    if value >= u32::MAX as u64 || (is_map && value > (u32::MAX / 2) as u64) {
+                    if !indefinite
+                        && (value >= u32::MAX as u64 || (map && value > (u32::MAX / 2) as u64))
+                    {
                         return None;
                     }
-                    pending -= 1;
-                    let children = if is_map { value * 2 } else { value };
-                    if children != 0 {
+                    cur.settle();
+                    let children = if map { value as u32 * 2 } else { value as u32 };
+                    if indefinite || children != 0 {
                         if depth == FAST_SCAN_DEPTH {
                             return None;
                         }
-                        stack[depth] = pending;
+                        stack[depth] = cur;
                         depth += 1;
-                        pending = children;
+                        cur = Level {
+                            pending: children,
+                            indefinite,
+                            map,
+                            mid_pair: false,
+                        };
                     }
                 }
 
                 // A tag prefixes the item after it rather than being one, so
                 // it settles no debt. This is why `preparse_next_value` leaves
                 // `remaining` alone for tags.
-                MAJOR_TAG => {}
+                MAJOR_TAG => after_tag = true,
 
                 // Major 7. A simple value below 32 written in two bytes is
                 // overlong, which `preparse_value` rejects.
@@ -387,7 +497,7 @@ impl Source for Buffer {
                     if ai == SIMPLE_TYPE_IN_NEXT_BYTE && value < 32 {
                         return None;
                     }
-                    pending -= 1;
+                    cur.settle();
                 }
             }
         }
