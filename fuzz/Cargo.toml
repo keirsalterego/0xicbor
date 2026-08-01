@@ -25,5 +25,12 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "json_diff"
+path = "fuzz_targets/json_diff.rs"
+test = false
+doc = false
+bench = false
+
 [profile.release]
 debug = 1
