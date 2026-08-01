@@ -32,10 +32,10 @@ differential test under `tests/port/` instead, run by `make test` against upstre
 |---|---|
 | Parse speed vs C | **0.36x**, faster on all 8 files (2.8x) |
 | Pretty-print vs C | **0.22x** (4.5x), but see [methodology](../../bench/methodology.md) |
-| `unsafe` blocks | 75 (all in `cbor-ffi`) |
+| `unsafe` blocks | 80 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
 | Differential fuzz | 1,507,421 execs / 901s, **zero divergences**, [history](differential-fuzzing.md) |
-| Decision log entries | 15 |
+| Decision log entries | 16 |
 
 ## Reading this honestly
 

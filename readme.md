@@ -42,7 +42,7 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
 | **Differential fuzz** | **1,507,421 execs, 901s, zero divergences** (one find, fixed) |
-| **`unsafe` blocks** | **75**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
+| **`unsafe` blocks** | **80**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
 | **Speed vs C** | **3.4x faster** (mean p50 over 16 throughput measurements) |
 
@@ -77,7 +77,7 @@ arm for `CborInvalidType` and reported that the input had run out, where upstrea
 [the fuzzing page](https://keirsalterego.github.io/0xicbor/verification/differential-fuzzing.html):
 60 seconds is enough to claim you fuzzed, not enough to find anything.
 
-For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 75
+For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 80
 here is in `cbor-ffi` dereferencing a pointer a C caller handed us, and each carries a
 `// SAFETY:` line naming the invariant. `cbor-core`, which is the entire CBOR implementation, is
 `#![forbid(unsafe_code)]` and contains none.

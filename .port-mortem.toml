@@ -30,7 +30,7 @@ abi_layout       = "asserted"
 
 [budget]
 # grep -rn "unsafe {" crates/ --include='*.rs' | wc -l — blocks, not mentions.
-unsafe_blocks = 75
+unsafe_blocks = 80
 fuzz_seconds  = 901  # plus a 301s re-verification after the last perf change
 # One real divergence found, at 420,793 execs in an earlier 900s run: the
 # pretty printer had no CborInvalidType arm. Fixed, kept as a regression

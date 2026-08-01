@@ -13,25 +13,25 @@
 
 ```console
 $ grep -rn "unsafe {" crates/ --include='*.rs' | wc -l
-75
+80
 ```
 
 Counting `unsafe {` counts blocks, which is the number that means something. A bare
-`grep -rn unsafe crates/` returns 93; the difference is 11 `unsafe fn` signatures and a
+`grep -rn unsafe crates/` returns 101; the difference is 14 `unsafe fn` signatures and a
 handful of lines of prose, including `cbor-core`'s `#![forbid(unsafe_code)]` itself.
 
-All 75 are in `cbor-ffi`:
+All 80 are in `cbor-ffi`:
 
 | file | blocks |
 |---|---:|
-| `parser.rs` | 37 |
+| `parser.rs` | 41 |
 | `encoder.rs` | 18 |
 | `tojson.rs` | 11 |
-| `pretty.rs` | 6 |
+| `pretty.rs` | 7 |
 | `validation.rs` | 3 |
 | `cbor-core/` (any file) | **0** |
 
-`grep -rn SAFETY crates/` returns 87, so every block is accounted for with room to spare:
+`grep -rn SAFETY crates/` returns 92, so every block is accounted for with room to spare:
 some invariants are stated once for a whole module and referred back to.
 
 This started at zero when the shim was stubs and was published at each step rather than at
@@ -58,8 +58,10 @@ operating on `&CborValue`. This is the bulk of the 75, and it is why `parser.rs`
 most: it has the most entry points.
 
 **Reading bytes out of the caller's buffer.** `be_load` does a sized unaligned load at a
-cursor the caller owns. The bounds check happens first, in safe code, every time; the
-`// SAFETY:` line on each call site names which check established it.
+cursor the caller owns, and `scan_subtree` reads heads the same way while skipping a
+subtree. The bounds check happens first, in safe code, every time; the `// SAFETY:` line
+on each call site names which check established it. The subtree scan is where the count
+last grew, from 75 to 80, and it is [decision 16](../reference/decisions.md).
 
 **`_cbor_value_dup_string`.** It allocates with libc `malloc` and hands ownership to the
 caller, who frees it with `free()`. That is a genuine cross-language allocation contract and

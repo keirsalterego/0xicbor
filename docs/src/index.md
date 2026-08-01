@@ -37,7 +37,7 @@ These are the real numbers from `make test`, not a target.
 | Original suite | **4,929 / 4,929, zero failures** |
 | Symbol parity | **44 / 44**, zero `nm` diff against upstream |
 | ABI layout | asserted against C-dumped offsets, passing |
-| `unsafe` blocks | **75**, all in the shim |
+| `unsafe` blocks | **80**, all in the shim |
 | Differential fuzz | **1,507,421 execs, zero divergences** |
 | Speed vs C | **3.4x faster** (mean p50, 16 measurements; parse 2.8x, print 4.5x) |
 
