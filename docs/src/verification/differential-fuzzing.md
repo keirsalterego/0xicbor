@@ -12,11 +12,34 @@ directly. It would be faster and simpler, and it would quietly make the central 
 of this port, that the shipped library contains no C, false.
 
 So `fuzz/oracle/cbor-oracle` is a standalone executable built from upstream's sources,
-driven as a **subprocess**: bytes in on stdin, diagnostic-notation rendering on stdout,
-the `CborError` on stderr. Nothing about it is linked into `libtinycbor.a`. The cost is
-roughly 2,000 executions per second instead of tens of thousands, which is a real
-price, and it is worth paying to keep the claim checkable. This is
+driven as a **subprocess**: bytes in on stdin, the rendering on stdout, the `CborError`
+on stderr. Nothing about it is linked into `libtinycbor.a`. The cost is roughly 2,000
+executions per second instead of tens of thousands, which is a real price, and it is
+worth paying to keep the claim checkable. This is
 [decision 5](../reference/decisions.md).
+
+## Two targets, because there are two output paths
+
+`pretty_diff` compares `cbor_value_to_pretty_advance`. `json_diff` compares
+`cbor_value_to_json_advance`, and it exists because the two share a parser and very
+little else.
+
+JSON has to refuse things diagnostic notation renders happily: a map key that is not a
+string, an integer too large to survive a double, a byte string with no tag saying how
+to encode it. It has its own escaping rules, its own base64 and base16, and a `$cbor`
+metadata sidecar. Fuzzing the printer reaches none of that.
+
+`CborToJsonFlags` also changes the output substantially, turning tags into objects and
+byte strings into base64url and map keys into strings, so `json_diff` takes the bitmask
+from the first byte of each input and passes the same value to both sides. A harness
+that only ever sent the default would leave most of the converter dark.
+
+```console
+$ ./fuzz/run.sh                  # the printer, the default
+$ TARGET=json_diff ./fuzz/run.sh # the converter
+```
+
+Each target keeps its own corpus and its own log.
 
 ## What is compared, and what deliberately is not
 
@@ -52,6 +75,16 @@ Stated in full, including the run that found something.
 | 511,224 | 301 s | clean, after the string-walk change |
 | 529,508 | 301 s | clean, after the subtree scan landed |
 | 922,346 | 601 s | clean, after the scan learned indefinite lengths |
+
+And `json_diff`, which is newer:
+
+| execs | duration | result |
+|---:|---:|---|
+| 242,469 | 121 s | clean |
+| 1,388,985 | 901 s | clean |
+
+It reaches 1,188 edges against the printer target's 765, which is the answer to whether
+it was worth adding: about 55% more of the library, none of it previously fuzzed.
 
 Two clean runs before a real bug is the whole argument for running it longer than the
 minimum. Sixty seconds of differential fuzzing is enough to claim you did it. It is not

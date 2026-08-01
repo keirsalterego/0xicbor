@@ -41,7 +41,7 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 | **Original suite** | **4,929 / 4,929, zero failures** |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **Differential fuzz** | **922,346 execs, 601s, zero divergences** (one find, fixed) |
+| **Differential fuzz** | **2.3M execs, zero divergences** across two targets (one find, fixed) |
 | **`unsafe` blocks** | **80**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
 | **Speed vs C** | **3.4x faster** (mean p50 over 16 throughput measurements) |
@@ -73,9 +73,14 @@ run. Two runs at 60 and 121 seconds came back clean; a 15-minute run found a rea
 at 420,793 executions, on a 1,220-byte input of deeply nested maps. The pretty printer had no
 arm for `CborInvalidType` and reported that the input had run out, where upstream prints
 `invalid` and reports the type. It is fixed, the input is a permanent fixture under
-`tests/port/corpus/`, and the run above is the re-verification. The moral is in
+`tests/port/corpus/`, and every later run re-verifies it. The moral is in
 [the fuzzing page](https://keirsalterego.github.io/0xicbor/verification/differential-fuzzing.html):
 60 seconds is enough to claim you fuzzed, not enough to find anything.
+
+There are two targets. The printer and the JSON converter share a parser and very little
+else, and JSON has to refuse things diagnostic notation renders happily, so `json_diff`
+reaches 1,188 edges against the printer's 765. Its flags come out of the first byte of
+each input, because most of that converter is only reachable with them set.
 
 For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 80
 here is in `cbor-ffi` dereferencing a pointer a C caller handed us, and each carries a

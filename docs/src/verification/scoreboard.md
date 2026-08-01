@@ -34,7 +34,7 @@ differential test under `tests/port/` instead, run by `make test` against upstre
 | Pretty-print vs C | **0.22x** (4.5x), but see [methodology](../../bench/methodology.md) |
 | `unsafe` blocks | 80 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
-| Differential fuzz | 922,346 execs / 601s, **zero divergences**, [history](differential-fuzzing.md) |
+| Differential fuzz | 2.3M execs, **zero divergences**, two targets, [history](differential-fuzzing.md) |
 | Decision log entries | 16 |
 
 ## Reading this honestly
