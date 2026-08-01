@@ -75,8 +75,17 @@ $(BUILD)/tst_pretty_diff-c: $(PORT)/tst_pretty_diff.c $(REF)
 	@mkdir -p $(BUILD)
 	$(CC) -std=gnu99 -Wall -Wextra -I$(INCLUDE) $< -o $@ $(REF) -lm
 
+$(BUILD)/tst_advance_diff-rust: $(PORT)/tst_advance_diff.c $(LIB)
+	@mkdir -p $(BUILD)
+	$(CC) -std=gnu99 -Wall -Wextra -I$(INCLUDE) $< -o $@ $(LIB) -lm -lpthread -ldl
+
+$(BUILD)/tst_advance_diff-c: $(PORT)/tst_advance_diff.c $(REF)
+	@mkdir -p $(BUILD)
+	$(CC) -std=gnu99 -Wall -Wextra -I$(INCLUDE) $< -o $@ $(REF) -lm
+
 test-port: $(BUILD)/tst_dup_string-rust $(BUILD)/tst_dup_string-c \
-           $(BUILD)/tst_pretty_diff-rust $(BUILD)/tst_pretty_diff-c
+           $(BUILD)/tst_pretty_diff-rust $(BUILD)/tst_pretty_diff-c \
+           $(BUILD)/tst_advance_diff-rust $(BUILD)/tst_advance_diff-c
 	@echo "== port tests: same source, both archives, transcripts diffed =="
 	@$(BUILD)/tst_dup_string-c    > $(BUILD)/dup_string-c.out
 	@$(BUILD)/tst_dup_string-rust > $(BUILD)/dup_string-rust.out
@@ -93,6 +102,16 @@ test-port: $(BUILD)/tst_dup_string-rust $(BUILD)/tst_dup_string-c \
 	    "$$(wc -l < $(BUILD)/pretty_diff-rust.out)" 0; \
 	else \
 	  echo "  pretty_diff: DIVERGES FROM UPSTREAM"; exit 1; \
+	fi
+	@$(BUILD)/tst_advance_diff-c    $(CORPUS) $(wildcard bench/corpus/*.cbor) \
+	  > $(BUILD)/advance_diff-c.out
+	@$(BUILD)/tst_advance_diff-rust $(CORPUS) $(wildcard bench/corpus/*.cbor) \
+	  > $(BUILD)/advance_diff-rust.out
+	@if diff -u $(BUILD)/advance_diff-c.out $(BUILD)/advance_diff-rust.out; then \
+	  printf '  %-12s %5s cases  %5s differ\n' 'advance_diff' \
+	    "$$(wc -l < $(BUILD)/advance_diff-rust.out)" 0; \
+	else \
+	  echo "  advance_diff: DIVERGES FROM UPSTREAM"; exit 1; \
 	fi
 
 test: all test-port
