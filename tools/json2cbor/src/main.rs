@@ -86,9 +86,10 @@ fn main() -> ExitCode {
 fn read_input(path: Option<&str>) -> Result<(Vec<u8>, usize), ExitCode> {
     let mut data = Vec::new();
     let Some(path) = path else {
+        let size = stdin_size();
         return match io::stdin().read_to_end(&mut data) {
             Ok(_) => {
-                let capacity = data.len();
+                let capacity = size.map_or(data.len(), |n| n + 1);
                 Ok((data, capacity))
             }
             Err(e) => {
@@ -105,19 +106,28 @@ fn read_input(path: Option<&str>) -> Result<(Vec<u8>, usize), ExitCode> {
             return Err(ExitCode::FAILURE);
         }
     };
-    let size = file
-        .seek(SeekFrom::End(0))
-        .ok()
-        .and_then(|n| usize::try_from(n).ok());
-    if size.is_some() {
-        let _ = file.rewind();
-    }
+    let size = measure(&mut file);
     if let Err(e) = file.read_to_end(&mut data) {
         eprintln!("read: {}", strerror(&e));
         return Err(ExitCode::FAILURE);
     }
     let capacity = size.map_or(data.len(), |n| n + 1);
     Ok((data, capacity))
+}
+
+/// The length of a seekable stream, leaving it back at the start.
+fn measure(file: &mut File) -> Option<usize> {
+    let size = usize::try_from(file.seek(SeekFrom::End(0)).ok()?).ok()?;
+    file.rewind().ok()?;
+    Some(size)
+}
+
+/// The same for stdin, which upstream measures with `fseeko` and std cannot
+/// seek at all. Reopening the descriptor through procfs asks the kernel the
+/// same question; a pipe or a terminal has no answer, and nor does a system
+/// without procfs, which is the case upstream reads in chunks anyway.
+fn stdin_size() -> Option<usize> {
+    measure(&mut File::open("/proc/self/fd/0").ok()?)
 }
 
 /// `strerror(errno)`. Rust appends " (os error N)" to the text it gets from the
