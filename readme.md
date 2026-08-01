@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/banner.png" alt="0xicbor — intel/tinycbor, C to Rust" width="820">
+<img src="assets/banner.png" alt="0xicbor: intel/tinycbor ported from C to Rust" width="820">
 
 ### Concise Binary Object Representation (CBOR) Library
 
@@ -38,10 +38,10 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 
 | | |
 |---|---|
-| **Original suite** | **4,929 / 4,929 — zero failures** |
+| **Original suite** | **4,929 / 4,929, zero failures** |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **Differential fuzz** | **1,507,421 execs, 901s, zero divergences** (one earlier find, fixed) |
+| **Differential fuzz** | **1,507,421 execs, 901s, zero divergences** (one find, fixed) |
 | **`unsafe` blocks** | **75**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
 | **Parsing speed** | **1.04x slower than C** (mean p50 over 8 corpus files) |
@@ -52,7 +52,7 @@ does not have. That is 2 rows, which is why the total is 4,929 and not 4,931, an
 own entry in [decisions.md](decisions.md) rather than being quietly dropped.
 
 **The port is still slower at parsing than the C it replaces**, on five of the eight corpus
-files — 0.87x to 1.22x, mean 1.04x. It was 1.49x until the byte source became a type
+files: 0.87x to 1.22x, mean 1.04x. It was 1.49x until the byte source became a type
 parameter instead of a runtime flag test; what is left is concentrated in the deeply nested
 file. Startup costs 63 µs more, peak RSS runs 12-72% higher, and the static archive is far
 larger. It wins pretty-printing by 2x to 32x, but that is upstream calling `vfprintf` once
@@ -71,16 +71,16 @@ arm for `CborInvalidType` and reported that the input had run out, where upstrea
 
 For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 75
 here is in `cbor-ffi` dereferencing a pointer a C caller handed us, and each carries a
-`// SAFETY:` line naming the invariant. `cbor-core` — the entire CBOR implementation — is
+`// SAFETY:` line naming the invariant. `cbor-core`, which is the entire CBOR implementation, is
 `#![forbid(unsafe_code)]` and contains none.
 
 ## How it fits together
 
 ```
-crates/cbor-core/   no_std + alloc, #![forbid(unsafe_code)] — the actual port
-crates/cbor-ffi/    staticlib, #[repr(C)] types — every unsafe block lives here
+crates/cbor-core/   the actual port: no_std + alloc, #![forbid(unsafe_code)]
+crates/cbor-ffi/    the C ABI shim: staticlib, #[repr(C)], all unsafe lives here
 crates/cbor-ffi/include/   the C headers callers compile against
-tools/              cbordump, json2cbor — pure Rust rewrites
+tools/              cbordump and json2cbor, pure Rust rewrites
 tests/original/     upstream's suite, verbatim, hash-pinned, never edited
 tests/port/         tests for what upstream's suite does not reach, each one
                     built against both archives and diffed rather than against
@@ -111,7 +111,7 @@ What *is* C, stated plainly:
 
 - **The headers** in `crates/cbor-ffi/include/` are upstream's, vendored so a fresh clone
   builds without tinycbor checked out next door. They are the ABI contract. The `static
-  inline` accessors in them compile into whatever program includes them — never into
+  inline` accessors in them compile into whatever program includes them, never into
   `libtinycbor.a`.
 - **The fuzz oracle** is upstream's C library built as a separate binary. The differential
   fuzzer talks to it over a pipe as a subprocess. It is not FFI and it is not linked in.

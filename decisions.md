@@ -12,7 +12,7 @@ Upstream's test suite is Qt/C++ calling the C API. There is no honest way to run
 So `cbor-ffi` is a `crate-type = ["staticlib"]` that exports the same 44 symbols with the
 same signatures, and the tests link against it with no edits and no shim layer of our own.
 
-The alternative — rewriting the tests to call a Rust API — would have made the pass rate
+The alternative, rewriting the tests to call a Rust API, would have made the pass rate
 meaningless. A test suite you rewrote is a test suite you can make pass.
 
 Cost: the port carries the shape of a C API into Rust. `cbor_value_get_int_checked` returns
@@ -56,7 +56,7 @@ clone builds without upstream checked out beside it.
 This is worth being precise about, because "no C" is a claim judges should be able to check.
 `libtinycbor.a` is compiled entirely from Rust: no `cc` crate, no `bindgen`, no linking
 against upstream. The headers are the ABI contract, and the 59 `static inline` accessors in
-`cbor.h` compile into whatever program includes them — the test binary — never into the
+`cbor.h` compile into whatever program includes them, which is the test binary, never into the
 library. `cborinternal_p.h` is vendored only because `tst_tojson.cpp` includes it for its
 own `encode_half`/`decode_half` reference, which likewise runs in the test binary.
 
@@ -78,7 +78,7 @@ union { uint8_t *ptr; ptrdiff_t bytes_needed; CborEncoderWriteFunction writer; }
 ```
 
 Every member of every one of these unions is exactly pointer-sized and pointer-aligned, so
-a single opaque word is layout-identical — and the layout test proves it rather than
+a single opaque word is layout-identical, and the layout test proves it rather than
 assuming it.
 
 A real `union` would have been the more literal translation, but reading any field of a
@@ -95,14 +95,14 @@ Qt test process and the baseline becomes "it crashed" instead of a number.
 
 Returning `CborErrorInternalError` (`INT_MAX`) lets the whole suite run and report per-row
 results, which turns the failure count into a progress bar. Baseline was 21 passed, 4,908
-failed — the 21 being rows that expect an error and coincidentally get one.
+failed, the 21 being rows that expect an error and coincidentally get one.
 
 ## 8. `cbor-core` is `no_std + alloc`; `cbor-ffi` is not
 
 Upstream targets microcontrollers. Dropping that would be a real reduction in what the
 library can do, so `cbor-core` is `#![no_std]` and `#![forbid(unsafe_code)]`, with `alloc`
-pulled in only for the `dup_string` family and indefinite-length string reassembly — both
-optional upstream too.
+pulled in only for the `dup_string` family and indefinite-length string reassembly,
+both of which are optional upstream too.
 
 `cbor-ffi` deliberately uses `std`. It only ever links into a hosted C program, and `std`
 supplies the allocator and panic handler that a `no_std` staticlib would otherwise need
@@ -114,7 +114,7 @@ this crate is ever used. The portability claim belongs to `cbor-core`, where it 
 
 Upstream's `CborError` reserves `0` for success and every function returns it. In
 `cbor-core` success is `Ok(())`, so the enum carries only failures and starts at 1. The
-discriminants of the failure variants are still fixed by the C ABI, gaps and all — upstream
+discriminants of the failure variants are still fixed by the C ABI, gaps and all. Upstream
 groups them in blocks of 256 by category so callers can range-check a class of failure, and
 that numbering is reproduced exactly.
 
@@ -141,7 +141,7 @@ not the qmake-era one.
 
 The rule is no source-language runtime: a C-to-Rust port must not FFI back into the
 library it replaces. This port does not. `cargo tree` lists four crates and they are all
-in this repository — `cbor-core`, `cbor-ffi` and the two tools — with no third-party
+in this repository (`cbor-core`, `cbor-ffi` and the two tools) with no third-party
 dependency at any depth, no `build.rs`, no `cc` and no `bindgen`. `libtinycbor.a` is
 compiled entirely from Rust. The differential fuzz oracle is upstream's C built as a
 standalone binary and driven as a subprocess over a pipe.
@@ -174,13 +174,13 @@ extern "C" {
 
 `_cbor_value_dup_string` hands the caller a block and the documentation says to release it
 with `free()`. That names the allocator. Returning a pointer from Rust's global allocator
-would be a heap mismatch the moment anyone honoured the contract — it happens to be malloc
+would be a heap mismatch the moment anyone honoured the contract. It happens to be malloc
 on this target today, and Rust promises nothing about that continuing to be true.
 
 This is not a loophole, because it does not get us anything. Rust's `std` links libc on
 Linux in every program ever compiled; if the rule barred that, no Rust port could exist on
-this platform. What the rule is actually about — reusing the original implementation instead
-of rewriting it — is not happening anywhere here, and the empty `nm` diff against a library
+this platform. What the rule is actually about, reusing the original implementation instead
+of rewriting it, is not happening anywhere here, and the empty `nm` diff against a library
 built from entirely different source is the evidence.
 
 `cbor-core`, which is the whole CBOR implementation, has no `extern` blocks at all and is
@@ -189,7 +189,7 @@ built from entirely different source is the evidence.
 ## 13. The byte source is a type parameter, not a flag test
 
 Upstream reads `parser->flags & CborParserFlag_ExternalSource` inside each of the four
-source operations — `can_read_bytes`, `read_bytes`, `advance_bytes`, `transfer_string` —
+source operations (`can_read_bytes`, `read_bytes`, `advance_bytes`, `transfer_string`)
 so the test runs on the head of every item. Transliterating that cost 1.49x against the C
 on an eight-file corpus, and it was almost the whole gap: hardcoding the branch to the
 buffer case took `map_heavy` from 1.83x to 1.10x.
@@ -198,7 +198,7 @@ The interesting part is why the same code is not slow in C. GCC at `-O3` runs
 `-fipa-cp-clone`, which clones a function specialised on a constant argument and folds the
 branch out of the clone. Building upstream with `-fno-ipa-cp-clone` and changing nothing
 else costs it 17%. `-fno-strict-aliasing`, which was my first guess, costs it nothing
-measurable (0.994x) — so this is not a TBAA story, it is a specialisation story.
+measurable (0.994x), so this is not a TBAA story, it is a specialisation story.
 
 rustc has no equivalent and will not grow one: it does not speculate on runtime values.
 What it does have is monomorphisation, which is the same transformation with the decision
@@ -212,8 +212,8 @@ says, and `cbor_parser_init_reader` still sets it. It is read once per API call 
 of once per byte read.
 
 Cost: two copies of the parser, which measured 4,128 bytes of `.text` on the benchmark
-driver — 0.6%. Mean ratio went 1.492 to 1.033, and three of the eight corpus files are now
-faster than the C.
+driver, or 0.6%. Mean ratio went 1.492 to 1.033, and three of the eight corpus files
+are now faster than the C.
 
 The alternative was threading a `bool` down by hand, which is the same specialisation
 written out longhand and would have doubled the argument list of every internal function
@@ -226,15 +226,15 @@ plus a status code becomes a Rust function that returns the value. `enter_contai
 exception: internally it still takes `&mut CborValue` and fills it.
 
 The idiomatic version was written and measured. `advance_recursive` recurses once per
-nesting level, so on `deep_nest.cbor` — 4,000 chains of 40 nested arrays — that is 160,000
-calls, and returning a 24-byte struct by value instead of filling one moved that file from
-1.25x to 1.68x against the C. Mean across the corpus went 1.04x to 1.11x. The struct is
-three words; returning it puts it through the return slot on every level, where filling a
-caller's stack slot leaves it where the next call already wants it.
+nesting level, so on `deep_nest.cbor`, which is 4,000 chains of 40 nested arrays,
+that is 160,000 calls, and returning a 24-byte struct by value instead of filling one
+moved that file from 1.25x to 1.68x against the C. Mean across the corpus went 1.04x to
+1.11x. The struct is three words; returning it puts it through the return slot on every
+level, where filling a caller's stack slot leaves it where the next call already wants it.
 
 So the out-parameter stayed and this note exists instead. The shim's own
-`cbor_value_enter_container` was always going to have that shape — the C signature demands
-it — so the inconsistency is confined to one internal function that the FFI boundary was
+`cbor_value_enter_container` was always going to have that shape, since the C signature demands
+it, so the inconsistency is confined to one internal function that the FFI boundary was
 already forcing.
 
 Recorded because "make it idiomatic" is the default advice for a port, and this is a place
