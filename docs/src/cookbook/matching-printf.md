@@ -15,7 +15,7 @@ start fixing them.** One missing function can account for half your red.
 ## The part Rust cannot do for you
 
 C prints doubles with `%.17g`. Rust has no equivalent, and the difference is not
-cosmetic — it is compared against fixtures character by character.
+cosmetic. It is compared against fixtures character by character.
 
 The rule, from C99 §7.19.6.1, is short. Let `X` be the base-10 exponent:
 
@@ -42,7 +42,7 @@ This is the actual lesson of this chapter. My first test looked like this:
 assert_eq!(format_g(1e-4, 17), "0.00010000000000000000");
 ```
 
-It failed. I assumed my implementation was wrong. It was not — my expectation was.
+It failed. I assumed my implementation was wrong. It was not. My expectation was.
 `%.17g` of `1e-4` is `0.0001`, because trailing zeros come off after the `%f`
 formatting, not before.
 
@@ -90,7 +90,7 @@ Translate the code. Write the comment about intent next to it.
 _ if (0x20..0x7f).contains(&uc) => out.push(ch),
 ```
 
-Astral characters are the other one — upstream emits a surrogate pair, so `😀` becomes
+Astral characters are the other one: upstream emits a surrogate pair, so `😀` becomes
 `😀` rather than one `ὠ0`. Rust's `char` is a full code point, so you
 have to split it back apart yourself:
 

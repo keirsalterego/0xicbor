@@ -1,7 +1,7 @@
 # Step 3: write the first module
 
 Pick the smallest self-contained thing in the library and do that first. Not because
-it unlocks the most tests — it usually unlocks none — but because it is where you find
+it unlocks the most tests (it usually unlocks none) but because it is where you find
 out whether your setup works before you have anything invested in it.
 
 Here that was half-precision floats: IEEE 754 binary16, about sixty lines, no
@@ -14,7 +14,7 @@ The `half` crate exists and is good. Using it would have been one line.
 The rule for this project was no third-party CBOR or float crates, and the reason
 generalises past hackathon rules: **wrapping a crate is not a port.** If the interesting
 part of the module is delegated, you have not learned whether you can reproduce the
-original's behaviour — you have learned whether two libraries happen to agree.
+original's behaviour. You have learned whether two libraries happen to agree.
 
 It is also genuinely small. Sixty lines is not a heroic act.
 

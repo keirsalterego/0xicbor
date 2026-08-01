@@ -1,7 +1,7 @@
 # Step 5: when the C is faster than your Rust
 
 The suite went green at 4,929 of 4,929 and the port was 1.49x slower than the library
-it replaced. Not on one pathological input — on all eight benchmark files, from 1.23x
+it replaced. Not on one pathological input, but on all eight benchmark files, from 1.23x
 to 1.83x, with p99 tracking p50 so it was systematic rather than tail noise.
 
 This chapter is about closing that gap, and mostly about the two hypotheses that were
@@ -53,7 +53,7 @@ It is a tidy story. It is also testable in about three minutes: rebuild upstream
 mean ratio: 0.994
 ```
 
-Nothing. Not a small effect — no effect. If the story had been right, taking TBAA away
+Nothing. Not a small effect. No effect at all. If the story had been right, taking TBAA away
 should have cost C most of its advantage.
 
 **Test the explanation, not just the fix.** The fix would have been the same either
@@ -63,7 +63,7 @@ way, and I would have shipped a confident, plausible, wrong paragraph about it.
 
 Next observation, found by accident: a plain `-O2` build of upstream is 1.66x slower
 than the `-O3` build the benchmark compares against. Whatever C is getting, it is
-getting from `-O3`. `-O3` mostly means more aggressive inlining, so — inlining, then.
+getting from `-O3`. `-O3` mostly means more aggressive inlining, so: inlining, then.
 
 Two more builds:
 
@@ -74,8 +74,8 @@ Two more builds:
 | `-O3 -fno-ipa-cp-clone` | **1.17x slower** |
 
 Inlining alone does not recover it. Unrolling and vectorisation are worth almost
-nothing here. But `-fipa-cp-clone` — interprocedural constant propagation *with
-cloning* — is worth 17% on its own.
+nothing here. But `-fipa-cp-clone`, interprocedural constant propagation *with
+cloning*, is worth 17% on its own.
 
 That pass makes a specialised copy of a function for a call site where an argument is
 constant, then folds the constant through the copy. Applied to a parser whose reads
@@ -85,7 +85,7 @@ Which is monomorphisation. GCC was doing it in the optimiser.
 
 ## The Rust version of that pass is the type system
 
-rustc will not speculate on a runtime value, and it should not — that is a heuristic,
+rustc will not speculate on a runtime value, and it should not, because that is a heuristic,
 and heuristics are exactly what a language with generics does not need. The
 transformation is available; it just has to be asked for.
 
@@ -136,7 +136,7 @@ On the nesting-heavy corpus file it went from 1.25x to 1.68x.
 Three words returned by value go through the return slot on every one of 160,000
 calls; filled in place, they were already where the next call wanted them. The
 out-parameter stayed, and the reasoning is
-[decision 14](../reference/decisions.md) so that nobody — including me in a week —
+[decision 14](../reference/decisions.md) so that nobody, including me in a week,
 tidies it back.
 
 ## What to take from this
@@ -147,7 +147,7 @@ tidies it back.
   of mine did, and both were wrong. Compiler flags are a cheap way to interrogate the
   other language's implementation directly.
 - When C beats you, ask which pass is doing it. `-fno-` your way through the ones that
-  fit the shape of the code — the answer is often a specific, nameable transformation
+  fit the shape of the code. The answer is often a specific, nameable transformation
   rather than "C is closer to the metal".
 - Idiomatic is a prior, not a proof. Measure the idiomatic version too.
 

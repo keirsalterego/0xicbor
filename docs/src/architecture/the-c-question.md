@@ -24,7 +24,7 @@ cbor-ffi v0.1.0
 
 Not `ciborium`, not `serde_cbor`, not `minicbor`, and not `half`. Wrapping an existing crate
 is not a port. `cbor-core` is `#![no_std]` with `alloc`, and the IEEE 754 binary16
-conversions are written out by hand — about thirty lines that would otherwise have been a
+conversions are written out by hand, about thirty lines that would otherwise have been a
 dependency.
 
 ## What *is* C, stated plainly
@@ -32,13 +32,14 @@ dependency.
 **The headers**, in `crates/cbor-ffi/include/`. These are upstream's `cbor.h`,
 `cborjson.h`, `cborinternal_p.h`, `compilersupport_p.h` and two generated headers, vendored
 so a fresh clone builds without tinycbor checked out beside it. They are the ABI contract.
-The 59 `static inline` accessors in `cbor.h` compile into whatever program includes them —
-the test binary — and never into the library. `cborinternal_p.h` is present only because
+The 59 `static inline` accessors in `cbor.h` compile into whatever program includes them,
+which is the test binary, and never into the library. `cborinternal_p.h` is present
+only because
 `tst_tojson.cpp` includes it for its own `encode_half`/`decode_half` reference, which
 likewise runs in the test binary.
 
 **The fuzz oracle.** Differential fuzzing needs upstream's implementation to compare
-against. It is built as a standalone `cbor-oracle` binary and driven as a **subprocess** —
+against. It is built as a standalone `cbor-oracle` binary and driven as a **subprocess**:
 bytes in on stdin, pretty output and exit code out. An in-process oracle over FFI would have
 been faster to write and would have made this whole page false.
 

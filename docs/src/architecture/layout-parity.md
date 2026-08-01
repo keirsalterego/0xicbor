@@ -10,7 +10,8 @@ CBOR_INLINE_API CborType cbor_value_get_type(const CborValue *value)
 }
 ```
 
-That function compiles into *the caller* — the Qt test binary — not into `libtinycbor.a`.
+That function compiles into *the caller*, which is the Qt test binary, not into
+`libtinycbor.a`.
 No amount of correct Rust can influence what it returns. If `CborValue::type` is at a
 different offset in the Rust struct than the C header believes, the test reads a different
 byte and the failure looks like a parser bug rather than a layout bug.
@@ -65,7 +66,7 @@ pub struct Word(pub *mut c_void);
 ```
 
 Every member of every one of these unions is exactly pointer-sized and pointer-aligned, so
-the layouts are identical — and the layout test proves it rather than assuming it.
+the layouts are identical, and the layout test proves it rather than assuming it.
 
 The reason to prefer the word is the [unsafe budget](unsafe-budget.md). Reading any field
 of a Rust `union` is `unsafe`, whether or not it can actually misbehave, because the

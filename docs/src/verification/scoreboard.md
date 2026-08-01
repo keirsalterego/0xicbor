@@ -10,12 +10,12 @@ Real output, updated as the port moves. Nothing here is a target.
 | `tst_parser` | 2,506 | 0 | |
 | `tst_tojson` | 827 | 0 | |
 | `tst_c90` | 1 | 0 | header compiles under `-std=c90 -pedantic` |
-| `tst_cpp` | — | — | inapplicable, see [decision 2](../reference/decisions.md) |
+| `tst_cpp` | n/a | n/a | inapplicable, see [decision 2](../reference/decisions.md) |
 | **Total** | **4,929** | **0** | of 4,929 reachable |
 
 Everything that can pass, passes, and nothing is stubbed any more. The last one was
-`_cbor_value_dup_string`, which no row in the suite reaches — it has its own differential
-test under `tests/port/` instead, run by `make test` against upstream's own archive.
+`_cbor_value_dup_string`, which no row in the suite reaches. It has its own
+differential test under `tests/port/` instead, run by `make test` against upstream's own archive.
 
 ## ABI
 
@@ -34,7 +34,7 @@ test under `tests/port/` instead, run by `make test` against upstream's own arch
 | Pretty-print vs C | 2x–32x faster, but see [methodology](../../bench/methodology.md) |
 | `unsafe` blocks | 75 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
-| Differential fuzz | 1,507,421 execs / 901s, **zero divergences** — [history](differential-fuzzing.md) |
+| Differential fuzz | 1,507,421 execs / 901s, **zero divergences**, [history](differential-fuzzing.md) |
 | Decision log entries | 15 |
 
 ## Reading this honestly

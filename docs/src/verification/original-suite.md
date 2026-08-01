@@ -19,7 +19,7 @@ $ cd tests/original && sha256sum -c hashes.txt
 ## How they get linked against Rust
 
 Upstream drives its suite from CMake through a `tinycbor_add_qtest()` helper. Reproducing
-that would mean carrying a slice of upstream's build system for no gain — the only things
+that would mean carrying a slice of upstream's build system for no gain. The only things
 the helper does that matter here are run `moc` and link Qt Test, which is four lines of
 makefile:
 

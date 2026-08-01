@@ -9,7 +9,7 @@ C, and compare what comes back.
 
 The obvious way to build this is to link upstream's C into the fuzz binary and call it
 directly. It would be faster and simpler, and it would quietly make the central claim
-of this port — that the shipped library contains no C — false.
+of this port, that the shipped library contains no C, false.
 
 So `fuzz/oracle/cbor-oracle` is a standalone executable built from upstream's sources,
 driven as a **subprocess**: bytes in on stdin, diagnostic-notation rendering on stdout,
@@ -47,16 +47,16 @@ Stated in full, including the run that found something.
 |---:|---:|---|
 | 103,703 | 60 s | clean |
 | 252,830 | 121 s | clean |
-| 420,793 | 900 s | **one divergence** — see below |
+| 420,793 | 900 s | **one divergence**, see below |
 | 1,507,421 | 901 s | clean, after the fix |
 
 Two clean runs before a real bug is the whole argument for running it longer than the
 minimum. Sixty seconds of differential fuzzing is enough to claim you did it. It is not
-enough to find anything past the shallow water — the bug that was there took seven
+enough to find anything past the shallow water. The bug that was there took seven
 minutes and four hundred thousand executions to surface, and both earlier runs had
 already reported success.
 
-The final run went 3.6× further than the one that found the bug, on a corpus the
+The final run went 3.6x further than the one that found the bug, on a corpus the
 earlier runs had grown, and stayed clean.
 
 ## What it found
@@ -64,7 +64,7 @@ earlier runs had grown, and stayed clean.
 A 1,220-byte input of deeply nested maps and tags. This port returned
 `CborErrorUnexpectedEOF` (257); upstream returned `CborErrorUnknownType` (259).
 
-The parser was not the problem — running `cbor_value_advance` over the same bytes gave
+The parser was not the problem. Running `cbor_value_advance` over the same bytes gave
 the identical error on both sides. The difference was in `value_to_pretty`, which had
 no arm for `CborInvalidType` and fell through to a catch-all that reported the input
 had run out. Upstream has an arm for it:
@@ -84,7 +84,7 @@ the key and then renders the value unconditionally, so a map that runs out betwe
 key and its value hands `value_to_pretty` a cursor whose type is `Invalid`.
 
 Getting there needs about 1,024 levels of nesting, which is why no small input
-reproduces it — `cargo fuzz tmin` could not shrink the case below 1,199 bytes, and a
+reproduces it. `cargo fuzz tmin` could not shrink the case below 1,199 bytes, and a
 brute-force search over every input up to five bytes found nothing. It is exactly the
 kind of case a hand-written test suite does not contain.
 
@@ -92,17 +92,17 @@ Reading the same function to fix it turned up a second, quieter gap: upstream ca
 `copy_current_position(it, &recursed)` on both error exits from the array/map case, so
 a caller inspecting its cursor after a failure sees where the descent actually stopped.
 This port returned the error and left the cursor on the opening bracket. Same error
-code either way — nothing would ever have caught it — but the state left behind was
+code either way, and nothing would ever have caught it, but the state left behind was
 wrong.
 
 Both are fixed, and the input is now a permanent fixture under `tests/port/corpus/`,
 replayed by `make test` in a couple of seconds rather than waiting on libFuzzer to
 rediscover it.
 
-The obvious follow-up question — is the same arm missing anywhere else? — has an
-answer: no. `cbortojson.c` and `cborvalidation.c` have the same `case CborInvalidType:
-return CborErrorUnknownType;`, and this port's `tojson.rs` and `validation.rs` already
-had it. The pretty printer was the one that did not.
+Is the same arm missing anywhere else? No. `cbortojson.c` and `cborvalidation.c` have
+the same `case CborInvalidType: return CborErrorUnknownType;`, and this port's
+`tojson.rs` and `validation.rs` already had it. The pretty printer was the one that
+did not.
 
 ## Running it
 

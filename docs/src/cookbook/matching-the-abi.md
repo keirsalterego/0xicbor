@@ -67,7 +67,7 @@ pub struct Word(pub *mut c_void);
 ```
 
 Every member of that C union is exactly pointer-sized and pointer-aligned, so the two
-layouts are identical — and the layout test *proves* that rather than assuming it.
+layouts are identical, and the layout test *proves* that rather than assuming it.
 
 The reason to prefer the plain word is the unsafe budget. Reading any field of a Rust
 `union` requires `unsafe`, whether or not it can actually misbehave, because the
@@ -75,7 +75,7 @@ compiler cannot know which member is live. If you are publishing your `unsafe` c
 as a quality signal, you do not want a dozen blocks that exist only to read a pointer
 you already knew was there.
 
-Which member is live is decided by the struct's own `flags` field — exactly as it is
+Which member is live is decided by the struct's own `flags` field, exactly as it is
 in C. You have not lost any safety, because there was never any to lose.
 
 ## Prove the symbols match

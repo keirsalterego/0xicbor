@@ -51,7 +51,7 @@ Then read the tests and find the ones that *cannot* apply to a port. In this pro
 
 That is not a test of the library. It is a test that the C sources compile as C++. A
 Rust port has no `.c` files for it to include, so the honest ceiling is 4,929, not
-4,931 — and the two missing rows get written down as a decision rather than silently
+4,931, and the two missing rows get written down as a decision rather than silently
 dropped.
 
 Find these on day one. Discovering at hour 60 that your target was never reachable is
@@ -75,7 +75,7 @@ staticlib built with `panic = "abort"` will kill the test process on the very fi
 call, and your baseline becomes "it crashed" instead of a number you can watch move.
 
 ```rust
-// Not unimplemented!() — that ends the process and the baseline with it.
+// Not unimplemented!(): that ends the process and the baseline with it.
 const STUB: c_int = c_int::MAX; // CborErrorInternalError
 ```
 
@@ -89,6 +89,6 @@ TOTAL           21 passed   4908 failed   (of 4929)
 ```
 
 Twenty-one passing with a library that does nothing at all. Those are tests that
-expect an error and coincidentally get one — the honest floor.
+expect an error and coincidentally get one. That is the honest floor.
 
 That is a good first day. You have written no logic, and you have a measurement.

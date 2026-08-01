@@ -21,7 +21,7 @@ makes the score meaningless. A test suite you rewrote is a test suite you can ma
 Every disagreement between your port and upstream becomes a test edit rather than a bug.
 
 **Wrap the Rust in a hand-written C translation layer.** Better, but it introduces a second
-implementation between the tests and the port — one that can absorb bugs, paper over
+implementation between the tests and the port, one that can absorb bugs, paper over
 mismatches, and quietly encode the behaviour you expected rather than the behaviour upstream
 had.
 
@@ -45,7 +45,7 @@ Inside `cbor-core` the same operation is what you would write if nobody were wat
 pub fn get_int_checked(&self) -> CborResult<i32>
 ```
 
-The out-parameter convention exists in exactly one place — the shim — and `cbor-core` never
+The out-parameter convention exists in exactly one place, the shim, and `cbor-core` never
 sees an integer error code. That split is the recurring shape of this port: idiomatic Rust
 in the middle, C conventions only at the edge, and one thin layer translating between them.
 
@@ -53,9 +53,9 @@ in the middle, C conventions only at the edge, and one thin layer translating be
 
 Two properties become mechanically checkable rather than matters of trust:
 
-- [**Layout parity**](layout-parity.md) — the structs are byte-identical to C's, proven by
+- [**Layout parity**](layout-parity.md): the structs are byte-identical to C's, proven by
   a test against numbers dumped from a C program.
-- [**Symbol parity**](symbol-parity.md) — `nm` on this library and on upstream's produce
+- [**Symbol parity**](symbol-parity.md): `nm` on this library and on upstream's produce
   the same sorted list, and the diff is empty.
 
 Neither of those is an argument. They are commands you can run.

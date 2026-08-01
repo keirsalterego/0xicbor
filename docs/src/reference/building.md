@@ -43,7 +43,7 @@ never next to the test sources.
 
 ## Fresh clone
 
-The repository builds without tinycbor checked out beside it — the C headers the tests
+The repository builds without tinycbor checked out beside it. The C headers the tests
 compile against are vendored, and upstream's reference library in `bench/reference/` is only
 a comparison target.
 

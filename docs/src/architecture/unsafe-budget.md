@@ -3,7 +3,7 @@
 `unsafe` is budgeted here, not sprinkled. The rule is structural rather than aspirational:
 
 - **`cbor-core` is `#![forbid(unsafe_code)]`.** Not `deny`, not a lint you can allow at a
-  call site — `forbid`, which cannot be overridden further down the tree. The entire CBOR
+  call site. `forbid` cannot be overridden further down the tree. The entire CBOR
   implementation lives under it.
 - **`cbor-ffi` is where every `unsafe` block lives**, and each one carries a `// SAFETY:`
   line naming the invariant the *caller* must uphold. This is the crate that dereferences
@@ -31,7 +31,7 @@ All 75 are in `cbor-ffi`:
 | `validation.rs` | 3 |
 | `cbor-core/` (any file) | **0** |
 
-`grep -rn SAFETY crates/` returns 87, so every block is accounted for with room to spare —
+`grep -rn SAFETY crates/` returns 87, so every block is accounted for with room to spare:
 some invariants are stated once for a whole module and referred back to.
 
 This started at zero when the shim was stubs and was published at each step rather than at
@@ -39,8 +39,9 @@ the end. A count that only ever moves in the flattering direction is not worth m
 nobody sees the intermediate values.
 
 For scale: [uv][uv] ships 73 `unsafe` blocks. [Bun][bun] ships 13,044. Neither number is
-damning on its own — a runtime that talks to JavaScriptCore has different obligations than a
-package resolver — but they bracket what "a lot" and "a little" look like in shipped Rust.
+damning on its own, since a runtime that talks to JavaScriptCore has different obligations
+than a package resolver, but they bracket what "a lot" and "a little" look like in
+shipped Rust.
 
 [uv]: https://github.com/astral-sh/uv
 [bun]: https://github.com/oven-sh/bun
@@ -51,8 +52,8 @@ The prediction made at kickoff was "pointer validation at every entry point, plu
 `_cbor_value_dup_string`, and nothing else if the design holds". That is what happened.
 
 **Pointer validation at the boundary.** Each of the 44 exported functions receives raw
-pointers from C. The shim converts them to references once, on entry — `as_ref` and `as_mut`
-in the parser, their equivalents elsewhere — and everything past that point is safe Rust
+pointers from C. The shim converts them to references once, on entry (`as_ref` and `as_mut`
+in the parser, their equivalents elsewhere) and everything past that point is safe Rust
 operating on `&CborValue`. This is the bulk of the 75, and it is why `parser.rs` has the
 most: it has the most entry points.
 
@@ -73,6 +74,6 @@ inflated this count without buying any safety.
 ## Why publish it at all
 
 Because the interesting failure mode of a C-to-Rust port is not "it does not compile". It is
-a port that reaches memory safety by writing C in Rust syntax — `unsafe` at every awkward
-corner until the borrow checker stops objecting. The count, per crate, with a rule that the
+a port that reaches memory safety by writing C in Rust syntax, with `unsafe` at every
+awkward corner until the borrow checker stops objecting. The count, per crate, with a rule that the
 core cannot contain any, is the cheapest available evidence that did not happen.
