@@ -41,7 +41,7 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 | **Original suite** | **4,929 / 4,929 — zero failures** |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **Differential fuzz** | **252,830 execs, 121s, zero divergences** |
+| **Differential fuzz** | **1,507,421 execs, 901s, zero divergences** (one earlier find, fixed) |
 | **`unsafe` blocks** | **75**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
 | **Parsing speed** | **1.04x slower than C** (mean p50 over 8 corpus files) |
@@ -60,6 +60,15 @@ per byte in `hexDump`, not decode speed, so it is not a headline worth claiming.
 numbers, the flag experiments behind the fix, and the method are in
 [bench/methodology.md](bench/methodology.md).
 
+**The fuzzer did find a bug**, and it is worth saying so rather than quoting only the clean
+run. Two runs at 60 and 121 seconds came back clean; a 15-minute run found a real divergence
+at 420,793 executions, on a 1,220-byte input of deeply nested maps. The pretty printer had no
+arm for `CborInvalidType` and reported that the input had run out, where upstream prints
+`invalid` and reports the type. It is fixed, the input is a permanent fixture under
+`tests/port/corpus/`, and the run above is the re-verification. The moral is in
+[the fuzzing page](https://keirsalterego.github.io/0xicbor/verification/differential-fuzzing.html):
+60 seconds is enough to claim you fuzzed, not enough to find anything.
+
 For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 75
 here is in `cbor-ffi` dereferencing a pointer a C caller handed us, and each carries a
 `// SAFETY:` line naming the invariant. `cbor-core` — the entire CBOR implementation — is
@@ -73,7 +82,9 @@ crates/cbor-ffi/    staticlib, #[repr(C)] types — every unsafe block lives her
 crates/cbor-ffi/include/   the C headers callers compile against
 tools/              cbordump, json2cbor — pure Rust rewrites
 tests/original/     upstream's suite, verbatim, hash-pinned, never edited
-tests/port/         property tests written for this port
+tests/port/         tests for what upstream's suite does not reach, each one
+                    built against both archives and diffed rather than against
+                    an expected-output file that could drift
 fuzz/               differential targets against an out-of-process C oracle
 bench/              methodology, results, and the upstream reference build
 ```

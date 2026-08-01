@@ -34,7 +34,7 @@ test under `tests/port/` instead, run by `make test` against upstream's own arch
 | Pretty-print vs C | 2x–32x faster, but see [methodology](../../bench/methodology.md) |
 | `unsafe` blocks | 75 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
-| Differential fuzz | 252,830 execs / 121s, **zero divergences** |
+| Differential fuzz | 1,507,421 execs / 901s, **zero divergences** — [history](differential-fuzzing.md) |
 | Decision log entries | 15 |
 
 ## Reading this honestly

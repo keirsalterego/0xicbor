@@ -38,7 +38,7 @@ These are the real numbers from `make test`, not a target.
 | Symbol parity | **44 / 44**, zero `nm` diff against upstream |
 | ABI layout | asserted against C-dumped offsets, passing |
 | `unsafe` blocks | **75**, all in the shim |
-| Differential fuzz | **252,830 execs, zero divergences** |
+| Differential fuzz | **1,507,421 execs, zero divergences** |
 | Parse speed | **1.04x slower than C** (mean p50; 5 of 8 files slower) |
 
 Every row that can apply to a port passes. The two that cannot are `tst_cpp`, which

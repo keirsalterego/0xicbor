@@ -31,8 +31,12 @@ abi_layout       = "asserted"
 [budget]
 # grep -rn "unsafe {" crates/ --include='*.rs' | wc -l — blocks, not mentions.
 unsafe_blocks = 75
-fuzz_seconds  = 121
-divergences   = 0
+fuzz_seconds  = 901
+# One real divergence found, at 420,793 execs in an earlier 900s run: the
+# pretty printer had no CborInvalidType arm. Fixed, kept as a regression
+# fixture in tests/port/corpus/, and the 901s run above is the re-verification.
+divergences_found = 1
+divergences_open  = 0
 decisions     = 15
 
 [bench]
