@@ -35,7 +35,7 @@ differential test under `tests/port/` instead, run by `make test` against upstre
 | `unsafe` blocks | 80 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
 | Differential fuzz | 2.3M execs, **zero divergences**, two targets, [history](differential-fuzzing.md) |
-| Decision log entries | 16 |
+| Decision log entries | 17 |
 
 ## Reading this honestly
 

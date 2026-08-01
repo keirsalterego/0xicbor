@@ -68,9 +68,17 @@ and it is stated here for the same reason the 1.49x was: full numbers, the compi
 experiments behind the fixes, and the method are in
 [bench/methodology.md](bench/methodology.md).
 
-**The fuzzer did find a bug**, and it is worth saying so rather than quoting only the clean
-run. Two runs at 60 and 121 seconds came back clean; a 15-minute run found a real divergence
-at 420,793 executions, on a 1,220-byte input of deeply nested maps. The pretty printer had no
+**A bug in upstream, filed:** [intel/tinycbor#331](https://github.com/intel/tinycbor/issues/331).
+`cbor_value_to_json_advance` is documented to reject text strings that are not valid UTF-8
+and does not, so it returns success having emitted a JSON document that is not UTF-8. The
+pretty printer in the same library rejects the same input. This port reproduces the
+behaviour deliberately, which is [decision 17](decisions.md): the equivalence claim is
+against a specific commit, and being bug-compatible is what makes the differential fuzzer
+mean anything.
+
+**The fuzzer also found a bug of ours**, and it is worth saying so rather than quoting only
+the clean run. Two runs at 60 and 121 seconds came back clean; a 15-minute run found a
+real divergence at 420,793 executions, on a 1,220-byte input of deeply nested maps. The pretty printer had no
 arm for `CborInvalidType` and reported that the input had run out, where upstream prints
 `invalid` and reports the type. It is fixed, the input is a permanent fixture under
 `tests/port/corpus/`, and every later run re-verifies it. The moral is in

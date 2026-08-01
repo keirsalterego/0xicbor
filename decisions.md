@@ -291,3 +291,37 @@ Two things the scan cannot do, both by construction rather than by omission. A t
 the top of an advance stops on the tagged value rather than past it, because a tag
 prefixes an item instead of being one, and there is no enclosing loop to carry on into.
 And a reader source has no buffer to scan, so it keeps the recursive path entirely.
+
+## 17. The JSON converter inherits an upstream bug, on purpose
+
+`cbor_value_to_json_advance` does not validate UTF-8, although upstream's own header
+comment says it does:
+
+> These functions also perform UTF-8 validation in CBOR text strings. If they encounter a
+> sequence of bytes that is not permitted in UTF-8, they will return
+> `CborErrorInvalidUtf8TextString`. That includes encoding of surrogate points in UTF-8.
+
+`cbor_value_to_pretty_advance` does exactly that. The JSON path does not, because text
+strings go through `escape_text_string()`, which escapes what JSON requires escaping and
+never decodes UTF-8. So `61 ff` returns `CborErrorInvalidUtf8TextString` from one renderer
+and `CborNoError` plus a JSON document that is not UTF-8 from the other. RFC 8259 §8.1
+requires JSON to be UTF-8, so the successful call produced something a JSON parser will
+refuse.
+
+Filed as [intel/tinycbor#331](https://github.com/intel/tinycbor/issues/331), against
+`9441b2ca`, which is the current tip.
+
+**This port reproduces the behaviour exactly**, and that is the decision. The whole claim
+here is behavioural equivalence with a specific commit, checked by a differential fuzzer;
+fixing a bug the reference still has would turn a passing check into a failing one and
+make the equivalence claim false. The 1.4 million executions `json_diff` has run clean are
+only meaningful because this port is bug-compatible.
+
+If upstream takes the fix, this port follows it. Until then the divergence would be ours,
+not theirs.
+
+Found by asking a different question than the fuzzer asks. The fuzzer compares this port
+against upstream, so anything both get wrong is invisible to it. Taking upstream's output
+for every successful conversion in the corpus and handing it to a strict JSON parser is a
+comparison against the *specification* instead, and 760 of roughly 27,000 conversions came
+back unparseable.
