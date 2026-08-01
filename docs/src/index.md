@@ -39,16 +39,16 @@ These are the real numbers from `make test`, not a target.
 | ABI layout | asserted against C-dumped offsets, passing |
 | `unsafe` blocks | **75**, all in the shim |
 | Differential fuzz | **1,507,421 execs, zero divergences** |
-| Parse speed | **0.98x of C** (mean p50; faster on 5 of 8 files) |
+| Speed vs C | **3.4x faster** (mean p50, 16 measurements; parse 2.8x, print 4.5x) |
 
 Every row that can apply to a port passes. The two that cannot are `tst_cpp`, which
 `#include`s upstream's `.c` files and therefore tests C sources this port does not have.
 
-Parsing edges out the C on average: faster on five of the eight corpus files, slower on
-three, and where it loses is published as prominently as the pass rate. See the
-[scoreboard](verification/scoreboard.md). It was 1.48x slower on all eight until two runtime
-branches became type parameters; the old figure is kept in the benchmark's history table
-rather than quietly replaced.
+Parsing is 2.8x faster than the C on every corpus file, and printing 4.5x. It was 1.48x
+*slower* on all eight when it was a literal transliteration; every figure since is kept in
+the benchmark's history table rather than quietly replaced. The one measurement the C still
+wins is process startup, and that is published as prominently as the rest. See the
+[scoreboard](verification/scoreboard.md).
 
 ## Where to start
 

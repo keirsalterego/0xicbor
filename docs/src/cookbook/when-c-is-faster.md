@@ -4,8 +4,9 @@ The suite went green at 4,929 of 4,929 and the port was 1.49x slower than the li
 it replaced. Not on one pathological input, but on all eight benchmark files, from 1.23x
 to 1.83x, with p99 tracking p50 so it was systematic rather than tail noise.
 
-This chapter is about closing that gap, and mostly about the two hypotheses that were
-wrong on the way.
+It ended up 2.8x faster on all eight. This chapter is how, and it is mostly about the
+hypotheses that were wrong on the way, because there were more of those than there were
+fixes.
 
 ## First: is it one thing or everything?
 
@@ -116,8 +117,7 @@ macro_rules! dispatch {
 
 The `Buffer` instantiation now contains no branch and no indirect call anywhere in it.
 Mean ratio 1.492 to 1.038, three of eight files faster than C, for 4,128 bytes of
-extra `.text`. Two later rounds took it to 0.984 and five of eight; they are at the
-end of this chapter.
+extra `.text`. Three more rounds follow.
 
 Note what did *not* change: the flag still lives in `CborParser::flags`, at the offset
 the C header specifies, set by the same function that always set it. The ABI cannot
@@ -196,6 +196,68 @@ That last one took the mean under 1.0.
 | fix the dispatch, outline the string branch | 1.014 | 4 of 8 |
 | monomorphise the chunk operation | **0.984** | **5 of 8** |
 
+## Round three: stop competing on their terms
+
+0.984 is parity, and parity was where three rounds of careful tuning had left it. Each
+round had made the same move: find where the C's compiler was doing something rustc
+was not, and do it by hand. That works right up until you have caught up, and then it
+stops, because you are running the same algorithm.
+
+So the last round asked a different question. Not "why is their code faster here" but
+"what is this code actually for".
+
+`cbor_value_advance` skips the item under the cursor and everything nested inside it.
+Upstream walks that subtree recursively, decoding each item it passes into a
+`CborValue`. Then it discards all of it. Nothing survives the walk except where the
+cursor ended up and whether anything was malformed.
+
+Which means the decoding is work nobody reads. And it is not a rounding error: on a
+flat array of integers it was 106 instructions an item in this port and 117 in the C,
+where the walk itself needs about ten.
+
+The replacement is one flat loop that reads heads, adds lengths, and keeps a small
+stack of how many items each open container still owes. Nesting turns out not to
+matter when you are only skipping: a container of N items is just N more items to get
+through.
+
+| | mean | files faster than C |
+|---|---:|---:|
+| before any of this | 1.492 | 0 of 8 |
+| monomorphise the source | 1.038 | 3 of 8 |
+| fix the dispatch, outline the string branch | 1.014 | 4 of 8 |
+| monomorphise the chunk operation | 0.984 | 5 of 8 |
+| **scan instead of descend** | **0.362** | **8 of 8** |
+
+The three tuning rounds together were worth 1.49x to 0.98x. Asking what the function
+was for was worth 0.98x to 0.36x.
+
+### The part that makes it safe to do at all
+
+Rewriting a traversal in a port is exactly the kind of change that quietly breaks
+behaviour, because the errors are the hard part. CBOR has a specific taxonomy of them
+and the tests check which one comes back, not just that something did.
+
+So the scan never reports an error. It hands back to the recursive code the moment it
+meets anything it does not want to reason about: a malformed head, a length the
+original would reject, nesting past 64 levels, a break where one may not go. Every
+error still comes from the original path, in the original order. The scan can be right
+or it can be absent; it cannot be subtly wrong about what went wrong.
+
+That property is what let this ship. It also means the check is easy to state: replay
+inputs through `cbor_value_advance` against both libraries, compare the error code, the
+final cursor offset and the resulting type. Across the fuzz corpus, the regression
+corpus and the benchmark corpus, 3,980 inputs, zero differences.
+
+Building that check found a bug that had nothing to do with the scan, and predated it
+by weeks: upstream copies the cursor into the caller's `next` *before* walking a string
+and works on that, so a failed walk still says how far it got, while this port walked a
+local copy and wrote it back only on success. Thirty-seven inputs disagreed. Same shape
+as the pretty printer's missing `copy_current_position` from an earlier chapter: right
+error, wrong state left behind, invisible to anything that only checks return values.
+
+Two rounds of that now. When a port is wrong in a way tests do not catch, it is usually
+about what it leaves behind rather than what it returns.
+
 ## What to take from this
 
 - Delete the suspect before optimising it. A build you throw away answers *where* in
@@ -213,6 +275,12 @@ That last one took the mean under 1.0.
 - Read the disassembly of the function you think is hot. Not to hand-optimise it, but
   because the compiler will show you which of your source constructs it did not like,
   and that is a much shorter list than the things you could try.
+- Matching the original's algorithm gets you to parity, and then it stops. Parity is
+  the ceiling of transliteration. Going past it means asking what the function is for,
+  which is a question about the API and not about the code.
+- When you do depart from the original, build the departure so it can only be right or
+  absent. A fast path that never reports an error cannot get the error taxonomy wrong,
+  and that is most of what there is to get wrong in a port.
 
 And publish the regression while it is still a regression. This port shipped a 1.48x
 number in its README for a day. That is what made it worth fixing.

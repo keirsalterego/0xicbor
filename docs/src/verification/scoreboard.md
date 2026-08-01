@@ -30,8 +30,8 @@ differential test under `tests/port/` instead, run by `make test` against upstre
 
 | | |
 |---|---|
-| Parse speed vs C | **0.98x** (mean p50, 8 files; 5 faster, 3 slower) |
-| Pretty-print vs C | 2x–32x faster, but see [methodology](../../bench/methodology.md) |
+| Parse speed vs C | **0.36x**, faster on all 8 files (2.8x) |
+| Pretty-print vs C | **0.22x** (4.5x), but see [methodology](../../bench/methodology.md) |
 | `unsafe` blocks | 75 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
 | Differential fuzz | 1,507,421 execs / 901s, **zero divergences**, [history](differential-fuzzing.md) |
@@ -42,11 +42,11 @@ differential test under `tests/port/` instead, run by `make test` against upstre
 4,929/4,929 is every row that can apply to a port. It is not 4,931 because two rows test that
 upstream's C compiles as C++, which a Rust port cannot satisfy by construction.
 
-The number under it is the one to read carefully: parsing is **faster than the C on five of
-eight corpus files and slower on three**. It was 1.48x slower on all eight for a day, and the
-history table in the [methodology](../../bench/methodology.md) keeps that number rather than
-erasing it. What is left correlates with nesting depth and not with instruction count, which
-is documented rather than tuned away.
+The speed numbers under it need reading carefully in the other direction. Parsing is faster
+than the C on all eight corpus files now, but it was 1.48x *slower* on all eight for a day,
+and the history table in the [methodology](../../bench/methodology.md) keeps that figure
+rather than erasing it. The print number is 4.5x and most of it is upstream's `vfprintf`
+per byte, not decoding, which the methodology says before it quotes it.
 
 If the port ends below 100%, the failing tests stay failing and each gets a paragraph in the
 [decision log](../reference/decisions.md). A reproducible 94% is worth more than a 100% that

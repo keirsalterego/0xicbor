@@ -44,23 +44,28 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 | **Differential fuzz** | **1,507,421 execs, 901s, zero divergences** (one find, fixed) |
 | **`unsafe` blocks** | **75**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
-| **Parsing speed** | **0.98x of C** (mean p50; faster on 5 of 8 corpus files) |
+| **Speed vs C** | **3.4x faster** (mean p50 over 16 throughput measurements) |
 
 Every test in Intel's suite that can apply to a port passes. `tst_cpp` is the exception and
 always was: it `#include`s upstream's `.c` files directly, so it tests C sources a Rust port
 does not have. That is 2 rows, which is why the total is 4,929 and not 4,931, and it has its
 own entry in [decisions.md](decisions.md) rather than being quietly dropped.
 
-**Parsing now edges out the C**: faster on five of the eight corpus files, slower on three,
-0.82x to 1.19x, mean 0.984. It was 1.49x on all eight until two runtime branches became type
-parameters, which is what GCC was already doing for the C with `-fipa-cp-clone`. What is
-left is nesting depth: this port is well ahead on shallow documents and loses ground as
-chains get deeper, and at depth 80 it runs 0.83% more instructions for 23% more wall clock,
-so it is stalls rather than work. Startup still costs 77 µs more, peak RSS runs 18-69%
-higher, and the static archive is far larger. It wins
-pretty-printing by 2x to 32x, but that is upstream calling `vfprintf` once per byte in
-`hexDump`, not decode speed, so it is not a headline worth claiming. Full
-numbers, the flag experiments behind the fix, and the method are in
+**Parsing is 2.8x faster than the C**, on every one of the eight corpus files, between
+2.0x and 3.8x. It was 1.49x *slower* on all eight when it was a literal transliteration.
+Three rounds of that came back from reading the generated code, and the last one from
+noticing that `cbor_value_advance` decodes every item it walks past and then throws all
+of it away. Skipping a subtree by scanning instead is
+[decision 16](decisions.md), and it hands back to the recursive code on anything unusual,
+so every error the API reports still comes from the original path.
+
+Pretty-printing is 4.5x, but most of that is upstream calling `vfprintf` once per byte in
+`hexDump` rather than anything about decoding, so it is not the number to quote.
+
+The C still starts a process faster, by 75 µs from a binary 119x larger, and this port
+uses 22% to 69% more memory. That is the only one of the seventeen measurements it loses,
+and it is stated here for the same reason the 1.49x was: full numbers, the compiler-flag
+experiments behind the fixes, and the method are in
 [bench/methodology.md](bench/methodology.md).
 
 **The fuzzer did find a bug**, and it is worth saying so rather than quoting only the clean
