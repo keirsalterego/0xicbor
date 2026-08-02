@@ -365,3 +365,104 @@ measures what is wired to it. Three of these four are error-path behaviour that 
 reasonable person would have found by reading, and the fourth was a validity bug sitting
 in a tool that had been green since the day it was written, because nothing had ever asked
 it a question.
+
+## 19. Half-precision floats are done on the bit patterns, by hand
+
+`f16` is still unstable in Rust and the `half` crate is out of scope, so
+`cbor-core/src/half.rs` converts binary16 both ways in 138 lines of shifts and masks.
+
+Upstream does not have this problem in the same shape. Its `decode_half` is the RFC 7049
+reference implementation, and its `encode_half` casts through `(_Float16)` where the
+compiler supports one and falls back to the reference code where it does not. This port
+has no such fallback to pick between: there is one implementation and it has to round the
+way the hardware would.
+
+That is the part worth stating. Decoding is easy — every binary16 value fits exactly in an
+`f32`, so it cannot round at all, and the only care needed is renormalising subnormals and
+keeping quiet NaNs quiet by shifting the payload rather than rebuilding it. Encoding is
+where the bodies are: **round-to-nearest-even**, including the tie case, including values
+that round *up into* a subnormal, and including values that round up into infinity. A naive
+truncate-the-mantissa encoder passes an astonishing number of tests and is wrong on exactly
+the inputs a fuzzer finds first.
+
+`core` has no `powi` and no float formatting, which rules out the arithmetic shortcuts, so
+everything is integer work on the raw bits. That turns out to be the right shape anyway: it
+is branch-predictable, it has no floating-point environment to depend on, and it gives the
+same answer on a machine with no FPU — which matters for a library whose audience is
+microcontrollers.
+
+`encode_diff` drives `cbor_encode_float_as_half_float` with arbitrary `f32` bit patterns
+against upstream, which is the check that the rounding actually matches rather than merely
+looking like it should.
+
+## 20. The parser does not allocate; one function does, and it uses `malloc`
+
+Upstream's selling point is that parsing takes no heap. This port keeps that literally:
+`cbor-core` is `no_std + alloc`, but nothing on the parse path calls into `alloc`.
+
+Indefinite-length strings are the case that tempts you. A text string split into chunks
+across the wire has no contiguous representation, so the obvious move is to concatenate it
+into a `Vec<u8>` and hand back a slice. Upstream does not do that, and neither does this.
+`iterate_string_chunks` walks the chunks twice with two different operations — `Measure` to
+total the length, then `CopyOut` to fill the caller's buffer — and the caller owns the
+memory both times. That is why `cbor_value_copy_text_string` takes a buffer and a
+length-in-out parameter instead of returning something: the two-pass shape is the API, not
+an implementation detail, and a port that allocated instead would silently change what
+`CborErrorOutOfMemory` means to every existing caller.
+
+There is exactly one allocation in the whole library, in `_cbor_value_dup_string`, and it
+is `malloc` rather than Rust's allocator on purpose. The documented contract is that the
+caller releases the result with `free()`. That names the allocator. Handing back a pointer
+from Rust's global allocator would be a heap mismatch the compiler cannot see and the
+caller cannot be blamed for — it would work today, because Rust's global allocator is
+`malloc` on this target, and break silently the first time someone set
+`#[global_allocator]`. Two `extern "C"` declarations are a smaller price. This is the only
+reason `alloc` is a dependency at all.
+
+## 21. The self-referential cursor is modelled as a raw pointer, not fought
+
+`CborValue` holds a `*const CborParser` pointing at a parser the caller owns, and nothing in
+the C API ties the two lifetimes together. A caller can free the parser and keep the value,
+or copy the value into a container that outlives the parser, and the C compiler will not
+say a word.
+
+This is the shape Rust exists to prevent, and there is no way to express it safely without
+changing the ABI — which is the one thing that cannot change, because the Qt tests read
+these fields directly through `static inline` accessors. So the borrow checker is not
+fought here, it is stepped around: the field stays a raw pointer, every dereference lives in
+`cbor-ffi` behind a `// SAFETY:` line, and the invariant is named as the caller's to uphold
+because in C it always was.
+
+What made this tractable was pushing the *decision* out of the pointer and into the type
+system one level up. A `CborValue` can be reading a flat buffer or calling back through a
+caller-supplied operations table, and upstream tests a flag on every access to tell which.
+Here the byte source is a type parameter instead, `trait Source` with `Buffer` and `Reader`
+implementations, so the choice is made once at the call boundary and the compiler
+monomorphises two specialised parsers out of one body — [decision 13](#13-the-byte-source-is-a-type-parameter-not-a-flag-test),
+and the reason parsing ended up faster than the C rather than merely as fast.
+
+The lifetime is still unenforced. Saying so plainly is better than a `PhantomData` that
+implies a guarantee the ABI cannot make.
+
+## 22. The `unsafe` budget: 80 blocks, all of them in the shim
+
+`cbor-core` is `#![forbid(unsafe_code)]` — not `deny`, `forbid`, so no inner module can
+opt back in. That crate is the entire CBOR implementation: the encoder, the parser's
+logic, half-floats, formatting, validation. It compiles with no `unsafe` at all.
+
+Every one of the 80 blocks is in `cbor-ffi`, and each carries a `// SAFETY:` line naming
+the invariant the C caller has to uphold. They are almost all the same block: a C caller
+handed us a pointer and we are about to read through it. That is what an ABI shim *is* —
+the number is a measure of how many places C values cross into Rust, not of how much
+risky code was written.
+
+The count is published in the readme and it has grown over the weekend, from 61 to 80,
+because the subtree scan and the JSON converter both added entry points. It is reported as
+it stands rather than as it was when it looked better. For scale, `uv` ships 73 blocks and
+Bun ships 13,044.
+
+Two things the budget deliberately does not do. It does not count `unsafe fn` declarations
+or `extern "C"` blocks, only `unsafe { }`, because those are the places something can
+actually go wrong. And it does not chase the number down by wrapping several dereferences
+in one block to make the total look smaller — that would trade a real property, one
+invariant named per operation, for a better-looking figure.

@@ -44,7 +44,7 @@ divergences_open  = 0
 # in cbordump, which is a second implementation the library's tests never
 # touch. All fixed, all now in `make test`. See decisions.md 18.
 bugs_found_by_tests = 5
-decisions     = 18
+decisions     = 22
 upstream_issue = "https://github.com/intel/tinycbor/issues/331"
 
 [bench]
