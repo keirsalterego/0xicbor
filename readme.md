@@ -13,6 +13,8 @@ The original Qt test suite runs against it unmodified.
 [Decisions](decisions.md) ·
 [Benchmarks](bench/methodology.md)
 
+[<img src="https://img.youtube.com/vi/PR97XYay1lA/maxresdefault.jpg" alt="Watch the walkthrough" width="820">](https://www.youtube.com/watch?v=PR97XYay1lA&autoplay=1)
+
 </div>
 
 ---
