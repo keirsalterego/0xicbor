@@ -1,0 +1,20 @@
+# Every differential fuzz run, oldest first. run.sh appends a row when it finishes.
+# Rows before 2026-08-02 were recovered from the log each commit carried, because
+# run.sh used to only overwrite fuzz/log*.txt and the earlier runs were not visible
+# in a checkout. Divergence-finding runs are not rows: their logs were replaced by
+# the fix commit. Both are in decisions.md, with reproducers in tests/port/corpus/.
+date	target	seconds	execs	commit	result
+2026-08-01	json_diff	901	1388985	0be1749	clean
+2026-08-01	pretty_diff	601	922346	10160fb	clean
+2026-08-01	pretty_diff	121	252830	5185483	clean
+2026-08-01	pretty_diff	301	529508	ab98578	clean
+2026-08-01	pretty_diff	301	511224	b314114	clean
+2026-08-01	validate_diff	181	362801	c3cdbfe	clean
+2026-08-01	pretty_diff	901	1507421	c60944c	clean
+2026-08-01	json_diff	121	227991	f9b61c9	clean
+2026-08-01	pretty_diff	121	196055	f9b61c9	clean
+2026-08-02	encode_diff	1201	2032920	5f6738c	clean
+2026-08-02	json_diff	601	744685	5f6738c	clean
+2026-08-02	validate_diff	901	1677406	5f6738c	clean
+2026-08-02	encode_diff	901	1644600	f8077e0	clean
+2026-08-02	pretty_diff	901	1458303	3a1cfd6	clean

@@ -115,4 +115,16 @@ cargo +nightly fuzz run "$TARGET" -- \
 if [ "$status" -ne 0 ]; then
   echo "== DIVERGENCE OR CRASH -- see $log and fuzz/artifacts/$TARGET/ ==" | tee -a "$log"
 fi
+
+# This overwrites $log, so without a row here every earlier run is invisible in a
+# checkout and the totals in readme.md cannot be checked against anything.
+done_line=$(grep -oE 'Done [0-9]+ runs in [0-9]+ second' "$log" | tail -1)
+if [ -n "$done_line" ]; then
+  [ "$status" -eq 0 ] && result=clean || result=divergence
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$(date -u +%F)" "$TARGET" "$(echo "$done_line" | awk '{print $5}')" \
+    "$(echo "$done_line" | awk '{print $2}')" "$(git -C "$here" rev-parse --short HEAD)" \
+    "$result" >> "$here/history.tsv"
+fi
+
 exit "$status"
