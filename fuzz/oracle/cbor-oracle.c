@@ -51,8 +51,18 @@
  * encoder -- it takes calls, not bytes. So the fuzzer's bytes are read as the
  * calls: a two-byte output buffer size, then a stream of opcodes.
  *
- *     bytes 0..1   output buffer size, little endian, modulo ENC_BUF_MAX
+ *     bytes 0..1   output buffer size, little endian, modulo ENC_BUF_MAX;
+ *                  bit 15 selects the writer-callback encoder instead
  *     bytes 2..    opcodes, each one byte followed by its operands
+ *
+ * Bit 15 picks between the two ways an encoder can exist. Clear, and it writes
+ * into a flat buffer, which is what cbor_encoder_init does. Set, and it calls
+ * back for every fragment, which is cbor_encoder_init_writer -- a separate path
+ * through the same append(), with its own idea of what running out of room
+ * means. The callback records the CborEncoderAppendType it was handed alongside
+ * the bytes, because that argument is ABI surface with nothing else checking it,
+ * and refuses everything past the same size limit so the error coming *back*
+ * through the encoder is exercised too.
  *
  * The opcode is taken modulo the table size so that random bytes are all
  * meaningful, and an operand running off the end of the input ends the program.
@@ -104,24 +114,57 @@ static void enc_emit(unsigned char *out, size_t *n, CborError err)
     out[(*n)++] = (u >> 24) & 0xff;
 }
 
+/* What the writer callback records: one (type, length, bytes) entry per call. */
+static unsigned char enc_log[ENC_BUF_MAX * 4];
+static size_t enc_log_len;
+static size_t enc_log_accepted;
+static size_t enc_log_cap;
+
+static CborError enc_writer(void *token, const void *data, size_t len,
+                            CborEncoderAppendType append_type)
+{
+    (void)token;
+    /* Refuse past the cap, so the encoder has to carry an error back out of the
+     * callback rather than only ever seeing success. */
+    if (enc_log_accepted + len > enc_log_cap)
+        return CborErrorOutOfMemory;
+    /* Room in the log itself is a harness limit, not an encoder one. */
+    if (enc_log_len + 3 + len > sizeof(enc_log))
+        return CborErrorOutOfMemory;
+    enc_log[enc_log_len++] = (unsigned char)append_type;
+    enc_log[enc_log_len++] = len & 0xff;
+    enc_log[enc_log_len++] = (len >> 8) & 0xff;
+    memcpy(enc_log + enc_log_len, data, len);
+    enc_log_len += len;
+    enc_log_accepted += len;
+    return CborNoError;
+}
+
 static CborError run_encoder_program(const unsigned char *prog, size_t len)
 {
     static unsigned char outbuf[ENC_BUF_MAX];
     /* Four bytes of transcript per op, and an op is at least one byte. */
     static unsigned char transcript[4 * MAX_INPUT + ENC_BUF_MAX + 8];
     CborEncoder stack[ENC_MAX_DEPTH + 1];
-    size_t pos = 0, tn = 0, bufsize, needed;
-    int depth = 0;
+    size_t pos = 0, tn = 0, bufsize, needed, header;
+    int depth = 0, use_writer;
     const unsigned char *b;
     CborError err = CborNoError;
 
     if (len < 2)
         return CborNoError;
-    bufsize = ((size_t)prog[0] | ((size_t)prog[1] << 8)) % (ENC_BUF_MAX + 1);
+    header = (size_t)prog[0] | ((size_t)prog[1] << 8);
+    use_writer = (header & 0x8000) != 0;
+    bufsize = (header & 0x7fff) % (ENC_BUF_MAX + 1);
     pos = 2;
 
     memset(outbuf, 0, sizeof(outbuf));
-    cbor_encoder_init(&stack[0], outbuf, bufsize, 0);
+    enc_log_len = enc_log_accepted = 0;
+    enc_log_cap = bufsize;
+    if (use_writer)
+        cbor_encoder_init_writer(&stack[0], enc_writer, NULL);
+    else
+        cbor_encoder_init(&stack[0], outbuf, bufsize, 0);
 
     while (pos < len) {
         unsigned op = prog[pos++] % ENC_OPS;
@@ -234,14 +277,21 @@ static CborError run_encoder_program(const unsigned char *prog, size_t len)
     }
 
 done:
-    /* Extra bytes needed is only meaningful on the root encoder, and only
-     * after everything opened has been closed; an unclosed container has not
-     * accounted for its own closing byte. Report it either way and let the
-     * comparison decide, since both sides answer the same question. */
-    needed = cbor_encoder_get_extra_bytes_needed(&stack[0]);
-    memcpy(transcript + tn, outbuf, bufsize);
-    tn += bufsize;
-    enc_emit(transcript, &tn, (CborError)(needed > 0xffffffffu ? 0xffffffffu : needed));
+    if (use_writer) {
+        /* What the callback saw, in order, with the append type it was told. */
+        memcpy(transcript + tn, enc_log, enc_log_len);
+        tn += enc_log_len;
+        enc_emit(transcript, &tn, (CborError)enc_log_accepted);
+    } else {
+        /* Extra bytes needed is only meaningful on the root encoder, and only
+         * after everything opened has been closed; an unclosed container has
+         * not accounted for its own closing byte. Report it either way and let
+         * the comparison decide, since both sides answer the same question. */
+        needed = cbor_encoder_get_extra_bytes_needed(&stack[0]);
+        memcpy(transcript + tn, outbuf, bufsize);
+        tn += bufsize;
+        enc_emit(transcript, &tn, (CborError)(needed > 0xffffffffu ? 0xffffffffu : needed));
+    }
 
     fwrite(transcript, 1, tn, stdout);
     return err;

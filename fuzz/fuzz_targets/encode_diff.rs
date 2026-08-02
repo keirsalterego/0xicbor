@@ -6,18 +6,27 @@
 //! there is no input to hand it.
 //!
 //! So the fuzzer's bytes become the calls. Each input is a little program — a
-//! two-byte output buffer size, then a stream of opcodes — run against both
-//! implementations, and what gets compared is the error from every call, the
-//! bytes each one wrote, and how much more room each says it needed.
+//! two-byte header, then a stream of opcodes — run against both implementations,
+//! and what gets compared is the error from every call, the bytes each one
+//! wrote, and how much more room each says it needed.
 //!
-//! ## The buffer size is the interesting operand
+//! ## The header is the interesting operand
 //!
-//! Upstream's encoder does not stop when it runs out of room. It switches its
-//! union from a write pointer to a byte counter, keeps walking the calls, and
-//! answers `CborErrorOutOfMemory` while accumulating what a big enough buffer
-//! would have taken. That bookkeeping is most of the non-obvious code in
-//! `cborencoder.c`, and it is unreachable with a buffer that always fits — so
-//! the size comes out of the input, small, and most programs overrun.
+//! Fifteen bits of it are the output buffer size. Upstream's encoder does not
+//! stop when it runs out of room: it switches its union from a write pointer to
+//! a byte counter, keeps walking the calls, and answers `CborErrorOutOfMemory`
+//! while accumulating what a big enough buffer would have taken. That
+//! bookkeeping is most of the non-obvious code in `cborencoder.c`, and it is
+//! unreachable with a buffer that always fits — so the size is small and most
+//! programs overrun.
+//!
+//! The sixteenth bit picks `cbor_encoder_init_writer` instead, which is the
+//! other way an encoder can exist: no buffer at all, a callback per fragment.
+//! It is a separate branch through the same `append()` with its own idea of
+//! running out of room, and the `CborEncoderAppendType` it hands the callback is
+//! ABI surface with nothing else checking it — so the callback records that
+//! argument alongside the bytes, and refuses everything past the same size limit
+//! so the error coming back *out* through the encoder is exercised too.
 //!
 //! ## Two interpreters
 //!
@@ -64,8 +73,56 @@ const SIMPLE_FALSE: u8 = 20;
 const SIMPLE_NULL: u8 = 22;
 const SIMPLE_UNDEFINED: u8 = 23;
 
+/// `CborErrorOutOfMemory`, which is what the writer answers past its cap.
+const ERR_OUT_OF_MEMORY: c_int = c_int::MIN;
+
+/// What the writer callback saw, in call order.
+///
+/// A `static mut` because the callback is an `extern "C" fn` with no way to
+/// carry state except the token, and threading a pointer through the token
+/// would test the harness rather than the encoder. libFuzzer runs one input at
+/// a time on one thread, so there is nothing to race with.
+struct WriterLog {
+    entries: Vec<u8>,
+    accepted: usize,
+    cap: usize,
+}
+
+static mut WRITER_LOG: Option<WriterLog> = None;
+
+/// Records the fragment and the `CborEncoderAppendType` it arrived with, and
+/// refuses everything past the cap so the encoder has to carry an error back
+/// out of the callback.
+extern "C" fn writer(
+    _token: *mut c_void,
+    data: *const c_void,
+    len: usize,
+    append_type: u32,
+) -> c_int {
+    // SAFETY: libFuzzer drives one input at a time on one thread, and the log is
+    // installed before `cbor_encoder_init_writer` and read after the last call.
+    let log = unsafe {
+        let p = &raw mut WRITER_LOG;
+        (*p).as_mut().expect("writer log installed")
+    };
+    if log.accepted + len > log.cap || log.entries.len() + 3 + len > LOG_MAX {
+        return ERR_OUT_OF_MEMORY;
+    }
+    log.entries.push(append_type as u8);
+    log.entries.extend_from_slice(&(len as u16).to_le_bytes());
+    // SAFETY: the encoder promises `len` readable bytes at `data`.
+    log.entries
+        .extend_from_slice(unsafe { std::slice::from_raw_parts(data as *const u8, len) });
+    log.accepted += len;
+    0
+}
+
+/// Mirrors `sizeof enc_log` in the oracle.
+const LOG_MAX: usize = BUF_MAX * 4;
+
 extern "C" {
     fn cbor_encoder_init(e: *mut CborEncoder, buffer: *mut u8, size: usize, flags: c_int);
+    fn cbor_encoder_init_writer(e: *mut CborEncoder, writer: *const c_void, token: *mut c_void);
     fn cbor_encode_uint(e: *mut CborEncoder, value: u64) -> c_int;
     fn cbor_encode_int(e: *mut CborEncoder, value: i64) -> c_int;
     fn cbor_encode_negative_int(e: *mut CborEncoder, absolute_value: u64) -> c_int;
@@ -127,7 +184,10 @@ fn ours(prog: &[u8]) -> (Vec<u8>, c_int) {
     if prog.len() < 2 {
         return (Vec::new(), 0);
     }
-    let bufsize = (usize::from(u16::from_le_bytes([prog[0], prog[1]]))) % (BUF_MAX + 1);
+    // Bit 15 picks the writer-callback encoder over the flat-buffer one.
+    let header = u16::from_le_bytes([prog[0], prog[1]]);
+    let use_writer = header & 0x8000 != 0;
+    let bufsize = usize::from(header & 0x7fff) % (BUF_MAX + 1);
     let mut outbuf = vec![0u8; BUF_MAX];
     let mut transcript = Vec::new();
     let mut p = Program {
@@ -144,7 +204,17 @@ fn ours(prog: &[u8]) -> (Vec<u8>, c_int) {
             .map(|_| MaybeUninit::<CborEncoder>::zeroed().assume_init())
             .collect();
         let mut depth = 0usize;
-        cbor_encoder_init(&mut stack[0], outbuf.as_mut_ptr(), bufsize, 0);
+        let logp = &raw mut WRITER_LOG;
+        *logp = Some(WriterLog {
+            entries: Vec::new(),
+            accepted: 0,
+            cap: bufsize,
+        });
+        if use_writer {
+            cbor_encoder_init_writer(&mut stack[0], writer as *const c_void, std::ptr::null_mut());
+        } else {
+            cbor_encoder_init(&mut stack[0], outbuf.as_mut_ptr(), bufsize, 0);
+        }
 
         while let Some(opcode) = p.u8() {
             let cur: *mut CborEncoder = &mut stack[depth];
@@ -263,9 +333,16 @@ fn ours(prog: &[u8]) -> (Vec<u8>, c_int) {
             transcript.extend_from_slice(&err.to_le_bytes());
         }
 
-        let needed = extra_bytes_needed(&stack[0]);
-        transcript.extend_from_slice(&outbuf[..bufsize]);
-        transcript.extend_from_slice(&(needed.min(0xffff_ffff) as u32).to_le_bytes());
+        if use_writer {
+            let log = (*logp).as_ref().expect("writer log installed");
+            transcript.extend_from_slice(&log.entries);
+            transcript.extend_from_slice(&(log.accepted as u32).to_le_bytes());
+        } else {
+            let needed = extra_bytes_needed(&stack[0]);
+            transcript.extend_from_slice(&outbuf[..bufsize]);
+            transcript.extend_from_slice(&(needed.min(0xffff_ffff) as u32).to_le_bytes());
+        }
+        *logp = None;
     }
 
     (transcript, err)
