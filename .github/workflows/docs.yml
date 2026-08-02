@@ -41,6 +41,11 @@ jobs:
           tar -xzf /tmp/mdbook.tar.gz --directory="$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # A broken relative link builds into a 404 without mdbook saying a word,
+      # so a rotted page looks fine until somebody clicks it.
+      - name: Check links
+        run: ./docs/check-links.py
+
       - name: Build
         run: mdbook build docs
 

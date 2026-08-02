@@ -194,6 +194,7 @@ fmt:
 lint:
 	$(CARGO) clippy --all-targets -- -D warnings
 	@$(PORT)/unsafe_budget.py
+	@docs/check-links.py
 
 clean:
 	$(CARGO) clean
