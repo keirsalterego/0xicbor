@@ -328,6 +328,9 @@ fn string_to_pretty(out: &mut String, it: *mut CborValue, type_: u8, flags: c_in
     let mut separator = "";
     loop {
         // Read before the chunk is consumed — afterwards the cursor has moved.
+        //
+        // SAFETY: `it` is the caller's live cursor, unchanged since the
+        // module contract was checked at entry; this only reads it.
         if showing_fragments || trailing.is_none() {
             trailing = Some(indicator(unsafe { &*it }, flags));
         }

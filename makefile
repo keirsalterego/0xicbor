@@ -173,7 +173,10 @@ symbols: $(LIB)
 	  && echo "symbols: 44/44, zero diff"
 
 # Differential fuzz against the out-of-process C oracle. Override the seconds
-# with DURATION, and pick the renderer with TARGET=json_diff.
+# with DURATION, and pick the target with TARGET=json_diff, validate_diff or
+# encode_diff. Sixty seconds is enough to say you fuzzed and not enough to find
+# anything -- both real divergences so far needed longer or a target that had
+# never run before.
 DURATION ?= 60
 
 fuzz:
@@ -190,6 +193,7 @@ fmt:
 
 lint:
 	$(CARGO) clippy --all-targets -- -D warnings
+	@$(PORT)/unsafe_budget.py
 
 clean:
 	$(CARGO) clean

@@ -688,6 +688,9 @@ fn preparse_value<S: Source>(it: &mut CborValue) -> c_int {
         it.extra = 0;
         // Up to 16 bits fit in `extra`; wider values stay in the buffer and get
         // decoded on demand, which is how the parser avoids storing a u64.
+        //
+        // SAFETY: the `can_read` check above proved `need` bytes are available
+        // at offset 1, and 1 and 2 are both within that.
         match need {
             1 => it.extra = unsafe { S::read(it, 1, 1) } as u16,
             2 => it.extra = unsafe { S::read(it, 1, 2) } as u16,
