@@ -13,18 +13,33 @@ $ make
 - Qt6 Test, discovered through `pkg-config`
 - `moc`, from the same Qt installation
 
-Nothing else. The Rust side has no dependencies at all.
+Nothing else. The Rust side has no dependencies at all, which you can check the same way
+anyone else would:
+
+```console
+$ cargo tree
+```
+
+Qt is only needed to *run upstream's tests*. If all you want is the library,
+`cargo build --release` produces `libtinycbor.a` on a machine with no Qt at all.
 
 ## Targets
 
 | | |
 |---|---|
-| `make` | library plus the four test binaries |
-| `make test` | run the original suite, print per-binary pass/fail |
+| `make` | library plus the original test binaries |
+| `make test` | the original suite plus this port's own differential tests |
+| `make test-tools` | `cbordump` and `json2cbor` against upstream's binaries |
 | `make symbols` | diff exported symbols against upstream's library |
-| `make lint` | `clippy`, warnings denied |
+| `make lint` | `clippy` with warnings denied, plus the unsafe budget check |
 | `make fmt` | `rustfmt --check` |
+| `make fuzz` | differential fuzz; `DURATION=900 TARGET=encode_diff` to pick |
+| `make bench` | rebuild the drivers and rewrite `bench/results.json` |
 | `make clean` | remove `build/` and `target/` |
+
+`make test` needs Qt6. `make test-tools`, `make fuzz` and `make bench` additionally want
+upstream checked out and built at `~/tinycbor-upstream`; they say so and skip rather than
+fail when it is not there. [Troubleshooting](troubleshooting.md) has the exact commands.
 
 ## Overriding tools
 
@@ -50,3 +65,13 @@ a comparison target.
 ```console
 $ git clone https://github.com/keirsalterego/0xicbor && cd 0xicbor && make test
 ```
+
+## Next steps
+
+- [Using the library](../using/index.md) once it has built.
+- [Troubleshooting](troubleshooting.md) if it has not.
+- [Contributing](contributing.md) before you change anything.
+
+---
+
+*Verified 2026-08-02 on Debian-based Linux x86-64, Qt 6, rustc 1.97.*

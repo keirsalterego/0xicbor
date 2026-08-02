@@ -74,3 +74,7 @@ compiler cannot know which member is live. Since the `unsafe` count in this port
 published number, spending blocks on field reads that carry no real risk would inflate it
 without buying any safety. Which member is live is decided by the owning struct's `flags`,
 exactly as it is in C.
+
+---
+
+*Verified 2026-08-02 on Linux x86-64.*

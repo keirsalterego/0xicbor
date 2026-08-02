@@ -79,3 +79,7 @@ Because the interesting failure mode of a C-to-Rust port is not "it does not com
 a port that reaches memory safety by writing C in Rust syntax, with `unsafe` at every
 awkward corner until the borrow checker stops objecting. The count, per crate, with a rule that the
 core cannot contain any, is the cheapest available evidence that did not happen.
+
+---
+
+*Verified 2026-08-02. `make lint` recomputes the count on every run.*

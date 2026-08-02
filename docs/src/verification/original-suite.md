@@ -73,3 +73,7 @@ $ make test
 Per binary, not just a total, because the binaries fail for different reasons and watching
 one of them move while the others do not is how you tell which module you actually just
 finished.
+
+---
+
+*Verified 2026-08-02 against upstream commit `9441b2ca`.*

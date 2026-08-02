@@ -37,8 +37,8 @@ that only ever sent the default would leave most of the converter dark.
 `validate_diff` compares `cbor_value_validate`, which is a predicate rather than a
 renderer: there is no output to diff, so the error code is the whole answer, and that
 makes it the strictest of the four. Its `CborValidationFlags` is a 27-bit matrix where
-almost every bit gates a separate check — shortest-form integers and floats, sorted
-maps, unique keys, tag use, UTF-8, finite floats, unknown simple types — so the first
+almost every bit gates a separate check: shortest-form integers and floats, sorted
+maps, unique keys, tag use, UTF-8, finite floats, unknown simple types. So the first
 four bytes of each input are the bitmask and the rest is the document.
 
 `encode_diff` is the odd one, and it is the one that mattered most.
@@ -47,8 +47,8 @@ The first three read CBOR. Half of tinycbor *writes* it, and nothing differentia
 ever touched that half, for a reason that looks like a good one until you look twice:
 an encoder takes calls, not bytes, so there is no input to hand it.
 
-So the fuzzer's bytes become the calls. Each input is a little program — a two-byte
-output buffer size, then a stream of opcodes with their operands — interpreted twice,
+So the fuzzer's bytes become the calls. Each input is a little program: a two-byte
+output buffer size, then a stream of opcodes with their operands, interpreted twice,
 once against this port and once against the oracle, covering every encoder entry point
 including the container stack. What is compared is the error from every single call, the
 bytes each side wrote, and how much more room each says it needed.
@@ -63,12 +63,12 @@ and most programs overrun on purpose.
 Bit 15 of that size word picks `cbor_encoder_init_writer` instead: no buffer at all, a
 callback per fragment. It is a separate branch through the same `append()` with its own
 idea of running out of room, and the `CborEncoderAppendType` it hands the callback is ABI
-surface that nothing else checks — so the callback records that argument alongside the
+surface that nothing else checks, so the callback records that argument alongside the
 bytes, and refuses everything past the same size limit so the error travelling back *out*
 through the encoder gets exercised too. That one bit was worth 40 edges.
 
 The cost of this design is a second interpreter. The program format is specified once,
-in a comment above `run_encoder_program` in the oracle, and implemented twice — the two
+in a comment above `run_encoder_program` in the oracle, and implemented twice. The two
 have to agree about the program before they can disagree about the encoder, which means
 an early divergence is much more likely to be the two readers than the two encoders.
 Thirty hand-written seed programs covering every opcode were replayed through both sides
@@ -141,7 +141,7 @@ it was worth adding: about 55% more of the library, none of it previously fuzzed
 
 | execs | duration | result |
 |---:|---:|---|
-| 2,653 | — | **one divergence**, see below |
+| 2,653 | first run | **one divergence**, see below |
 | 2,032,920 | 1,201 s | clean, after the fix |
 | 1,644,600 | 901 s | clean, with the writer callback path added |
 
@@ -206,7 +206,7 @@ rediscover it.
 Is the same arm missing anywhere else? In the library, no. `cbortojson.c` and
 `cborvalidation.c` have the same `case CborInvalidType: return CborErrorUnknownType;`,
 and this port's `tojson.rs` and `validation.rs` already had it. The pretty printer was
-the one that did not — and, it later turned out, so was the *second* pretty printer in
+the one that did not. And, it later turned out, so was the *second* pretty printer in
 `tools/cbordump/`, which is a separate rewrite nothing was checking. That is
 [decision 18](../reference/decisions.md).
 
@@ -223,7 +223,7 @@ if (value >= HalfPrecisionFloat && value <= Break)
 ```
 
 24 is the escape byte that introduces a two-byte simple value, so upstream accepts it
-and writes `f8 18` — which upstream's own *parser* then refuses, as a value under 32
+and writes `f8 18`, which upstream's own *parser* then refuses, as a value under 32
 written in two bytes. The encoder writes what the parser will not read.
 
 This port now does the same, for the reason [decision 17](../reference/decisions.md)
@@ -234,7 +234,7 @@ differential fuzzer meaningless.
 What is worth noticing is *why* it survived. `tst_encoder` has 1,596 rows and passes
 every one of them. None of them asks for simple value 24. A hand-written suite tests the
 values a person thought of, and 24 sits in the gap between "obviously fine" and
-"obviously reserved" — which is exactly the shape of thing a fuzzer walks into in the
+"obviously reserved", which is exactly the shape of thing a fuzzer walks into in the
 first four seconds and a person does not write down in an afternoon.
 
 ## Running it
@@ -247,3 +247,7 @@ $ KEEP_GOING=1 ./fuzz/run.sh # keep going past divergences, collect them all
 
 Everything is teed to `fuzz/log.txt`. A divergence leaves a reproducer in
 `fuzz/artifacts/pretty_diff/` and exits non-zero.
+
+---
+
+*Verified 2026-08-02. Re-run any of it with `TARGET=<name> ./fuzz/run.sh <seconds>`.*

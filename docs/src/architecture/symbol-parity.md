@@ -47,3 +47,7 @@ diff was empty on the first build. That ordering is deliberate: symbol parity is
 of the *interface*, so it costs almost nothing to establish up front and becomes a
 regression test for every commit afterwards. Discovering a missing symbol at hour 60 is a
 much worse afternoon.
+
+---
+
+*Verified 2026-08-02. Reproduce with `make symbols`.*

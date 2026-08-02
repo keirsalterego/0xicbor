@@ -31,7 +31,7 @@ differential test under `tests/port/` instead, run by `make test` against upstre
 | | |
 |---|---|
 | Parse speed vs C | **0.37x**, faster on all 8 files (2.7x) |
-| Pretty-print vs C | **0.23x** (4.4x), but see [methodology](../../bench/methodology.md) |
+| Pretty-print vs C | **0.23x** (4.4x), but see [methodology](https://github.com/keirsalterego/0xicbor/blob/main/bench/methodology.md) |
 | `unsafe` blocks | 80 (all in `cbor-ffi`) |
 | Third-party dependencies | 0 |
 | Differential fuzz | 8.4M execs, **zero divergences**, four targets, [history](differential-fuzzing.md) |
@@ -45,10 +45,14 @@ upstream's C compiles as C++, which a Rust port cannot satisfy by construction.
 
 The speed numbers under it need reading carefully in the other direction. Parsing is faster
 than the C on all eight corpus files now, but it was 1.48x *slower* on all eight for a day,
-and the history table in the [methodology](../../bench/methodology.md) keeps that figure
+and the history table in the [methodology](https://github.com/keirsalterego/0xicbor/blob/main/bench/methodology.md) keeps that figure
 rather than erasing it. The print number is 4.4x and most of it is upstream's `vfprintf`
 per byte, not decoding, which the methodology says before it quotes it.
 
 If the port ends below 100%, the failing tests stay failing and each gets a paragraph in the
 [decision log](../reference/decisions.md). A reproducible 94% is worth more than a 100% that
 required editing the suite.
+
+---
+
+*Verified 2026-08-02. Reproduce with `make test`, `make symbols`, `make lint`, `python3 bench/run.py`.*
