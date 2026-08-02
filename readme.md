@@ -41,7 +41,7 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 | **Original suite** | **4,929 / 4,929, zero failures** |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **Differential fuzz** | **4.7M execs, zero divergences** across three targets (one find, fixed) |
+| **Differential fuzz** | **6.7M execs, zero divergences** across four targets (two finds, fixed) |
 | **Tools vs upstream** | **exact** on 4,509 documents x 20 flag combinations (four finds, fixed) |
 | **`unsafe` blocks** | **80**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
@@ -52,19 +52,19 @@ always was: it `#include`s upstream's `.c` files directly, so it tests C sources
 does not have. That is 2 rows, which is why the total is 4,929 and not 4,931, and it has its
 own entry in [decisions.md](decisions.md) rather than being quietly dropped.
 
-**Parsing is 2.8x faster than the C**, on every one of the eight corpus files, between
-2.0x and 3.8x. It was 1.49x *slower* on all eight when it was a literal transliteration.
+**Parsing is 2.7x faster than the C**, on every one of the eight corpus files, between
+2.1x and 3.8x. It was 1.49x *slower* on all eight when it was a literal transliteration.
 Three rounds of that came back from reading the generated code, and the last one from
 noticing that `cbor_value_advance` decodes every item it walks past and then throws all
 of it away. Skipping a subtree by scanning instead is
 [decision 16](decisions.md), and it hands back to the recursive code on anything unusual,
 so every error the API reports still comes from the original path.
 
-Pretty-printing is 4.5x, but most of that is upstream calling `vfprintf` once per byte in
+Pretty-printing is 4.4x, but most of that is upstream calling `vfprintf` once per byte in
 `hexDump` rather than anything about decoding, so it is not the number to quote.
 
-The C still starts a process faster, by 75 µs from a binary 119x larger, and this port
-uses 22% to 69% more memory. That is the only one of the seventeen measurements it loses,
+The C still starts a process faster, by 130 µs from a binary 119x larger, and this port
+uses 11% to 66% more memory. That is the only one of the seventeen measurements it loses,
 and it is stated here for the same reason the 1.49x was: full numbers, the compiler-flag
 experiments behind the fixes, and the method are in
 [bench/methodology.md](bench/methodology.md).
@@ -77,22 +77,34 @@ behaviour deliberately, which is [decision 17](decisions.md): the equivalence cl
 against a specific commit, and being bug-compatible is what makes the differential fuzzer
 mean anything.
 
-**The fuzzer also found a bug of ours**, and it is worth saying so rather than quoting only
-the clean run. Two runs at 60 and 121 seconds came back clean; a 15-minute run found a
-real divergence at 420,793 executions, on a 1,220-byte input of deeply nested maps.
-The pretty printer had no
-arm for `CborInvalidType` and reported that the input had run out, where upstream
-prints `invalid` and reports the type. It is fixed, the input is a permanent fixture under
-`tests/port/corpus/`, and every later run re-verifies it. The moral is in
+**The fuzzer also found two bugs of ours**, and both are worth saying out loud rather than
+quoting only the clean runs. Two runs at 60 and 121 seconds came back clean; a 15-minute
+run found a real divergence at 420,793 executions, on a 1,220-byte input of deeply nested
+maps. The pretty printer had no arm for `CborInvalidType` and reported that the input had
+run out, where upstream prints `invalid` and reports the type. The moral is in
 [the fuzzing page](https://keirsalterego.github.io/0xicbor/verification/differential-fuzzing.html):
 60 seconds is enough to claim you fuzzed, not enough to find anything.
 
-There are three targets. The printer and the JSON converter share a parser and very little
+The second took four seconds, because it was the first run of a target that had never
+existed. `cbor_encode_simple_value` rejected the range 24..=31; upstream's guard starts at
+25, so simple value 24 is encodable and comes out as `f8 18` — which upstream's own parser
+then refuses. The encoder writes what the parser will not read, this port now does the
+same, and `tst_encoder` passes 1,596 rows without ever asking for that value.
+
+Both fixes keep their reproducer under `tests/port/corpus/`, replayed on every later run.
+
+There are four targets. The printer and the JSON converter share a parser and very little
 else, and JSON has to refuse things diagnostic notation renders happily, so `json_diff`
 reaches 1,188 edges against the printer's 765. `validate_diff` compares a predicate rather
-than a rendering, which makes it the strictest of the three: there is no output to diff,
-so the error code is the whole answer. All three take their flags out of the head of each
-input, because most of what they gate is unreachable otherwise.
+than a rendering: no output to diff, so the error code is the whole answer.
+
+`encode_diff` is the one that mattered. The other three read CBOR; half of tinycbor writes
+it, and nothing differential had touched that half, because an encoder takes calls rather
+than bytes and there is no input to hand it. So the fuzzer's bytes *become* the calls —
+each input is a program of encoder operations, run against both libraries, comparing every
+call's error, the bytes each wrote, and how much more room each said it needed. The output
+buffer size comes out of the input and is deliberately small, because upstream's encoder
+does its most interesting work after it runs out of room.
 
 **A green board only measures what is wired to it.** `cbordump` and `json2cbor` are
 rewritten in safe Rust rather than being C over the library — the FFI speaks in raw

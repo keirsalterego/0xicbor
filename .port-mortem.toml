@@ -31,11 +31,13 @@ abi_layout       = "asserted"
 [budget]
 # grep -rn "unsafe {" crates/ --include='*.rs' | wc -l — blocks, not mentions.
 unsafe_blocks = 80
-fuzz_seconds  = 3004  # 601s pretty_diff + 1502s json_diff + 901s validate_diff
-# One real divergence found by fuzzing, at 420,793 execs in an earlier 900s
-# run: the pretty printer had no CborInvalidType arm. Fixed, kept as a
-# regression fixture in tests/port/corpus/, and the runs above re-verify it.
-divergences_found = 1
+fuzz_seconds  = 4205  # 601s pretty + 1502s json + 901s validate + 1201s encode
+# Two real divergences found by fuzzing. The pretty printer had no
+# CborInvalidType arm, at 420,793 execs in a 900s run. cbor_encode_simple_value
+# rejected simple value 24, which upstream encodes, at 2,653 execs on the new
+# encoder target's first run. Both fixed, both kept as regression fixtures in
+# tests/port/corpus/, and the runs above re-verify them.
+divergences_found = 2
 divergences_open  = 0
 # Found instead by building tests for what nothing else reached: the
 # CborErrorIO the two converters threw away (reader differential), and four
@@ -48,8 +50,8 @@ upstream_issue = "https://github.com/intel/tinycbor/issues/331"
 [bench]
 # bench/results.json, mean of rust_vs_c_p50 across the 8 corpus files.
 # Greater than 1.0 means this port is slower than the C.
-parse_p50_mean  = 0.362
-parse_p50_range = "0.26 - 0.50"
+parse_p50_mean  = 0.366
+parse_p50_range = "0.26 - 0.48"
 files_slower    = 0
 files_faster    = 8
-pretty_p50_mean = 0.222
+pretty_p50_mean = 0.226

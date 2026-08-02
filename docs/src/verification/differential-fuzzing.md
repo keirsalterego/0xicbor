@@ -18,7 +18,7 @@ executions per second instead of tens of thousands, which is a real price, and i
 worth paying to keep the claim checkable. This is
 [decision 5](../reference/decisions.md).
 
-## Two targets, because there are two output paths
+## Four targets
 
 `pretty_diff` compares `cbor_value_to_pretty_advance`. `json_diff` compares
 `cbor_value_to_json_advance`, and it exists because the two share a parser and very
@@ -34,9 +34,44 @@ byte strings into base64url and map keys into strings, so `json_diff` takes the 
 from the first byte of each input and passes the same value to both sides. A harness
 that only ever sent the default would leave most of the converter dark.
 
+`validate_diff` compares `cbor_value_validate`, which is a predicate rather than a
+renderer: there is no output to diff, so the error code is the whole answer, and that
+makes it the strictest of the four. Its `CborValidationFlags` is a 27-bit matrix where
+almost every bit gates a separate check — shortest-form integers and floats, sorted
+maps, unique keys, tag use, UTF-8, finite floats, unknown simple types — so the first
+four bytes of each input are the bitmask and the rest is the document.
+
+`encode_diff` is the odd one, and it is the one that mattered most.
+
+The first three read CBOR. Half of tinycbor *writes* it, and nothing differential had
+ever touched that half, for a reason that looks like a good one until you look twice:
+an encoder takes calls, not bytes, so there is no input to hand it.
+
+So the fuzzer's bytes become the calls. Each input is a little program — a two-byte
+output buffer size, then a stream of opcodes with their operands — interpreted twice,
+once against this port and once against the oracle, covering every encoder entry point
+including the container stack. What is compared is the error from every single call, the
+bytes each side wrote, and how much more room each says it needed.
+
+The buffer size is the operand that matters. Upstream's encoder does not stop when it
+runs out of room: it turns its union from a write pointer into a byte counter, keeps
+walking the calls, and reports at the end what a big enough buffer would have taken.
+That bookkeeping is most of the non-obvious code in `cborencoder.c`, and it is
+unreachable with a buffer that always fits. So the size comes out of the input, small,
+and most programs overrun on purpose.
+
+The cost of this design is a second interpreter. The program format is specified once,
+in a comment above `run_encoder_program` in the oracle, and implemented twice — the two
+have to agree about the program before they can disagree about the encoder, which means
+an early divergence is much more likely to be the two readers than the two encoders.
+Thirty hand-written seed programs covering every opcode were replayed through both sides
+before the fuzzer ran at all.
+
 ```console
-$ ./fuzz/run.sh                  # the printer, the default
-$ TARGET=json_diff ./fuzz/run.sh # the converter
+$ ./fuzz/run.sh                      # the printer, the default
+$ TARGET=json_diff ./fuzz/run.sh     # the converter
+$ TARGET=validate_diff ./fuzz/run.sh # the validator
+$ TARGET=encode_diff ./fuzz/run.sh   # the encoder
 ```
 
 Each target keeps its own corpus and its own log.
@@ -82,9 +117,30 @@ And `json_diff`, which is newer:
 |---:|---:|---|
 | 242,469 | 121 s | clean |
 | 1,388,985 | 901 s | clean |
+| 744,685 | 601 s | clean, after the `CborErrorIO` fix |
 
 It reaches 1,188 edges against the printer target's 765, which is the answer to whether
 it was worth adding: about 55% more of the library, none of it previously fuzzed.
+
+
+`validate_diff`:
+
+| execs | duration | result |
+|---:|---:|---|
+| 362,801 | 301 s | clean |
+| 1,677,406 | 901 s | clean |
+
+`encode_diff`, which found something in its first quarter hour:
+
+| execs | duration | result |
+|---:|---:|---|
+| 2,653 | — | **one divergence**, see below |
+| 2,032,920 | 1,201 s | clean, after the fix |
+
+`encode_diff` reaches 2,001 features on 393 edges. The edge count is lower because the
+encoder is a smaller body of code than the parser; the feature count is the highest of
+the four, which is what you would expect from a target that varies both the calls and
+the amount of room they have to work in.
 
 Two clean runs before a real bug is the whole argument for running it longer than the
 minimum. Sixty seconds of differential fuzzing is enough to claim you did it. It is not
@@ -98,6 +154,8 @@ after a change to the parser, because a change that touches how bytes are walked
 exactly what this is for.
 
 ## What it found
+
+### The printer's missing type
 
 A 1,220-byte input of deeply nested maps and tags. This port returned
 `CborErrorUnexpectedEOF` (257); upstream returned `CborErrorUnknownType` (259).
@@ -137,10 +195,39 @@ Both are fixed, and the input is now a permanent fixture under `tests/port/corpu
 replayed by `make test` in a couple of seconds rather than waiting on libFuzzer to
 rediscover it.
 
-Is the same arm missing anywhere else? No. `cbortojson.c` and `cborvalidation.c` have
-the same `case CborInvalidType: return CborErrorUnknownType;`, and this port's
-`tojson.rs` and `validation.rs` already had it. The pretty printer was the one that
-did not.
+Is the same arm missing anywhere else? In the library, no. `cbortojson.c` and
+`cborvalidation.c` have the same `case CborInvalidType: return CborErrorUnknownType;`,
+and this port's `tojson.rs` and `validation.rs` already had it. The pretty printer was
+the one that did not — and, it later turned out, so was the *second* pretty printer in
+`tools/cbordump/`, which is a separate rewrite nothing was checking. That is
+[decision 18](../reference/decisions.md).
+
+### The encoder's off-by-one
+
+`encode_diff` found one at 2,653 executions, on its first run.
+
+`cbor_encode_simple_value` rejected the range 24..=31 as reserved. Upstream's guard is
+`value >= HalfPrecisionFloat && value <= Break`, and `HalfPrecisionFloat` is 25:
+
+```c
+if (value >= HalfPrecisionFloat && value <= Break)
+    return CborErrorIllegalSimpleType;
+```
+
+24 is the escape byte that introduces a two-byte simple value, so upstream accepts it
+and writes `f8 18` — which upstream's own *parser* then refuses, as a value under 32
+written in two bytes. The encoder writes what the parser will not read.
+
+This port now does the same, for the reason [decision 17](../reference/decisions.md)
+gives about the UTF-8 bug: the claim being made here is equivalence with a specific
+commit, and a port that quietly fixed upstream's asymmetries would make its own
+differential fuzzer meaningless.
+
+What is worth noticing is *why* it survived. `tst_encoder` has 1,596 rows and passes
+every one of them. None of them asks for simple value 24. A hand-written suite tests the
+values a person thought of, and 24 sits in the gap between "obviously fine" and
+"obviously reserved" — which is exactly the shape of thing a fuzzer walks into in the
+first four seconds and a person does not write down in an afternoon.
 
 ## Running it
 
