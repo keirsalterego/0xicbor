@@ -4,6 +4,7 @@
 #   ./fuzz/run.sh                    # 60 seconds, stops at the first divergence
 #   ./fuzz/run.sh 900                # 15 minutes
 #   TARGET=json_diff ./fuzz/run.sh   # the JSON converter instead of the printer
+#   TARGET=encode_diff ./fuzz/run.sh # the encoder, driven by a call program
 #   KEEP_GOING=1 ./fuzz/run.sh       # keep fuzzing past divergences, collect them all
 #   TINYCBOR=/elsewhere ./fuzz/run.sh
 #
@@ -41,8 +42,42 @@ fi
 # json_diff takes its CborToJsonFlags from the first byte of the input, so its
 # seeds carry one. Four of them, cycled, so the corpus starts with every flag
 # combination represented rather than only the default.
+#
+# encode_diff is not fed CBOR at all -- its input is a program of encoder calls
+# -- so it gets its own seeds: a two-byte output buffer size, then opcodes. The
+# sizes are deliberately small, because the encoder's overrun bookkeeping is the
+# part of it worth reaching.
 mkdir -p "$corpus"
-if [ -z "$(ls -A "$corpus")" ]; then
+if [ "$TARGET" = encode_diff ] && [ -z "$(ls -A "$corpus")" ]; then
+  i=0
+  # One of each opcode; a buffer too small for anything; nesting; an
+  # unbalanced close; indefinite containers; a close_container_checked that
+  # cannot be satisfied.
+  for s in '\x40\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x11\x12' \
+           '\x03\x00\x05\x0a0123456789' \
+           '\x00\x00\x11\x12\x11' \
+           '\x20\x00\x0c\xff\x11\x0d\xff\x12\x12\x0e\x0e' \
+           '\x20\x00\x0e\x0f\x0c\x05\x11\x0f' \
+           '\x40\x00\x0c\x01\x0c\x01\x0c\x01\x11\x0e\x0e\x0e' \
+           '\x10\x00\x06\x20AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+           '\x08\x00\x08\x00\x00\x00\x00\x00\x00\xf0\x7f' \
+           '\x08\x00\x0a\x00\x00\x80\x3f' \
+           '\x08\x00\x03\xc8' '\x40\x00\x0b\x03\x83\x01\x02'; do
+    printf '%b' "$s" > "$corpus/seed$i"
+    i=$((i + 1))
+  done
+  echo "seeded $i programs into $corpus"
+fi
+
+# Programs a run already found something with. fuzz/corpus/ is not tracked, so
+# these live in the repo and are copied in on every run rather than waiting for
+# libFuzzer to rediscover them. Unconditional, so a corpus that already has
+# files still gets them back.
+if [ "$TARGET" = encode_diff ]; then
+  for f in "$here"/../tests/port/corpus/*.encprog; do
+    [ -e "$f" ] && cp "$f" "$corpus/$(basename "$f")"
+  done
+elif [ -z "$(ls -A "$corpus")" ]; then
   i=0
   flags=('' '' '' '')
   case "$TARGET" in

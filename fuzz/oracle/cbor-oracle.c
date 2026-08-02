@@ -10,6 +10,7 @@
  *     cbor-oracle json FLAGS       JSON, with that CborToJsonFlags bitmask
  *     cbor-oracle validate FLAGS   cbor_value_validate, that CborValidationFlags
  *                                  bitmask, no output beyond the error code
+ *     cbor-oracle encode           runs stdin as an encoder program; see below
  *
  * No arguments keeps the original behaviour, so the pretty harness spawns it
  * exactly as it always did.
@@ -42,6 +43,210 @@
 /* Matches MAX_INPUT in the fuzz target. Inputs are small; this is a backstop. */
 #define MAX_INPUT (1 << 20)
 
+/*
+ * The encoder program.
+ *
+ * Everything else here reads CBOR. Half of tinycbor writes it, and no
+ * differential test reached any of it, because there is no input to feed an
+ * encoder -- it takes calls, not bytes. So the fuzzer's bytes are read as the
+ * calls: a two-byte output buffer size, then a stream of opcodes.
+ *
+ *     bytes 0..1   output buffer size, little endian, modulo ENC_BUF_MAX
+ *     bytes 2..    opcodes, each one byte followed by its operands
+ *
+ * The opcode is taken modulo the table size so that random bytes are all
+ * meaningful, and an operand running off the end of the input ends the program.
+ * Small buffers are the point: most of the encoder's interesting behaviour is
+ * what it does once it has run out of room, where it stops writing, keeps
+ * counting, and reports how much more it needed.
+ *
+ * The transcript is every call's CborError as a four-byte little-endian int,
+ * then the whole output buffer, then cbor_encoder_get_extra_bytes_needed. The
+ * buffer is dumped whole rather than up to the write cursor because that cursor
+ * is past the end once the encoder has overrun, and the comparison wants
+ * something well defined on exactly the inputs that matter.
+ *
+ * This interpreter and the one in fuzz_targets/encode_diff.rs are written from
+ * this comment. They have to agree about the program before they can disagree
+ * about the encoder, so a divergence in the first few hundred executions is far
+ * more likely to be the two readers than the two encoders.
+ */
+#define ENC_BUF_MAX 1024
+#define ENC_MAX_DEPTH 16
+#define ENC_OPS 19
+
+/* Reads `n` bytes at `*pos`, or returns 0 having left `*pos` alone. */
+static int enc_take(const unsigned char *p, size_t len, size_t *pos, size_t n,
+                    const unsigned char **out)
+{
+    if (len - *pos < n)
+        return 0;
+    *out = p + *pos;
+    *pos += n;
+    return 1;
+}
+
+static uint64_t enc_u64(const unsigned char *b)
+{
+    uint64_t v = 0;
+    int i;
+    for (i = 7; i >= 0; --i)
+        v = (v << 8) | b[i];
+    return v;
+}
+
+static void enc_emit(unsigned char *out, size_t *n, CborError err)
+{
+    unsigned u = (unsigned)err;
+    out[(*n)++] = u & 0xff;
+    out[(*n)++] = (u >> 8) & 0xff;
+    out[(*n)++] = (u >> 16) & 0xff;
+    out[(*n)++] = (u >> 24) & 0xff;
+}
+
+static CborError run_encoder_program(const unsigned char *prog, size_t len)
+{
+    static unsigned char outbuf[ENC_BUF_MAX];
+    /* Four bytes of transcript per op, and an op is at least one byte. */
+    static unsigned char transcript[4 * MAX_INPUT + ENC_BUF_MAX + 8];
+    CborEncoder stack[ENC_MAX_DEPTH + 1];
+    size_t pos = 0, tn = 0, bufsize, needed;
+    int depth = 0;
+    const unsigned char *b;
+    CborError err = CborNoError;
+
+    if (len < 2)
+        return CborNoError;
+    bufsize = ((size_t)prog[0] | ((size_t)prog[1] << 8)) % (ENC_BUF_MAX + 1);
+    pos = 2;
+
+    memset(outbuf, 0, sizeof(outbuf));
+    cbor_encoder_init(&stack[0], outbuf, bufsize, 0);
+
+    while (pos < len) {
+        unsigned op = prog[pos++] % ENC_OPS;
+        CborEncoder *cur = &stack[depth];
+
+        switch (op) {
+        case 0:
+            if (!enc_take(prog, len, &pos, 8, &b)) goto done;
+            err = cbor_encode_uint(cur, enc_u64(b));
+            break;
+        case 1:
+            if (!enc_take(prog, len, &pos, 8, &b)) goto done;
+            err = cbor_encode_int(cur, (int64_t)enc_u64(b));
+            break;
+        case 2:
+            if (!enc_take(prog, len, &pos, 8, &b)) goto done;
+            err = cbor_encode_negative_int(cur, enc_u64(b));
+            break;
+        case 3:
+            if (!enc_take(prog, len, &pos, 1, &b)) goto done;
+            err = cbor_encode_simple_value(cur, b[0]);
+            break;
+        case 4:
+            if (!enc_take(prog, len, &pos, 8, &b)) goto done;
+            err = cbor_encode_tag(cur, enc_u64(b));
+            break;
+        case 5: {
+            const unsigned char *s;
+            if (!enc_take(prog, len, &pos, 1, &b)) goto done;
+            if (!enc_take(prog, len, &pos, b[0], &s)) goto done;
+            err = cbor_encode_text_string(cur, (const char *)s, b[0]);
+            break;
+        }
+        case 6: {
+            const unsigned char *s;
+            if (!enc_take(prog, len, &pos, 1, &b)) goto done;
+            if (!enc_take(prog, len, &pos, b[0], &s)) goto done;
+            err = cbor_encode_byte_string(cur, s, b[0]);
+            break;
+        }
+        case 7: {
+            float f;
+            if (!enc_take(prog, len, &pos, 4, &b)) goto done;
+            memcpy(&f, b, 4);
+            err = cbor_encode_float(cur, f);
+            break;
+        }
+        case 8: {
+            double d;
+            if (!enc_take(prog, len, &pos, 8, &b)) goto done;
+            memcpy(&d, b, 8);
+            err = cbor_encode_double(cur, d);
+            break;
+        }
+        case 9: {
+            uint16_t h;
+            if (!enc_take(prog, len, &pos, 2, &b)) goto done;
+            memcpy(&h, b, 2);
+            err = cbor_encode_half_float(cur, &h);
+            break;
+        }
+        case 10: {
+            float f;
+            if (!enc_take(prog, len, &pos, 4, &b)) goto done;
+            memcpy(&f, b, 4);
+            err = cbor_encode_float_as_half_float(cur, f);
+            break;
+        }
+        case 11: {
+            const unsigned char *s;
+            if (!enc_take(prog, len, &pos, 1, &b)) goto done;
+            if (!enc_take(prog, len, &pos, b[0], &s)) goto done;
+            err = cbor_encode_raw(cur, s, b[0]);
+            break;
+        }
+        case 12:
+        case 13: {
+            size_t n;
+            if (depth == ENC_MAX_DEPTH) { pos += 1; continue; }
+            if (!enc_take(prog, len, &pos, 1, &b)) goto done;
+            n = b[0] == 0xff ? CborIndefiniteLength : (size_t)b[0];
+            err = op == 12 ? cbor_encoder_create_array(cur, &stack[depth + 1], n)
+                           : cbor_encoder_create_map(cur, &stack[depth + 1], n);
+            /* Upstream writes the head and then hands back the child either
+             * way, so the child is live even when the head did not fit. */
+            depth++;
+            break;
+        }
+        case 14:
+        case 15:
+            if (depth == 0)
+                continue;
+            err = op == 14
+                      ? cbor_encoder_close_container(&stack[depth - 1], cur)
+                      : cbor_encoder_close_container_checked(&stack[depth - 1], cur);
+            depth--;
+            break;
+        case 16:
+            if (!enc_take(prog, len, &pos, 1, &b)) goto done;
+            err = cbor_encode_boolean(cur, b[0] & 1);
+            break;
+        case 17:
+            err = cbor_encode_null(cur);
+            break;
+        default:
+            err = cbor_encode_undefined(cur);
+            break;
+        }
+        enc_emit(transcript, &tn, err);
+    }
+
+done:
+    /* Extra bytes needed is only meaningful on the root encoder, and only
+     * after everything opened has been closed; an unclosed container has not
+     * accounted for its own closing byte. Report it either way and let the
+     * comparison decide, since both sides answer the same question. */
+    needed = cbor_encoder_get_extra_bytes_needed(&stack[0]);
+    memcpy(transcript + tn, outbuf, bufsize);
+    tn += bufsize;
+    enc_emit(transcript, &tn, (CborError)(needed > 0xffffffffu ? 0xffffffffu : needed));
+
+    fwrite(transcript, 1, tn, stdout);
+    return err;
+}
+
 int main(int argc, char **argv)
 {
     static unsigned char buf[MAX_INPUT];
@@ -53,6 +258,13 @@ int main(int argc, char **argv)
     unsigned long flags = argc > 2 ? strtoul(argv[2], NULL, 10) : 0;
 
     len = fread(buf, 1, sizeof(buf), stdin);
+
+    if (strcmp(mode, "encode") == 0) {
+        err = run_encoder_program(buf, len);
+        fflush(stdout);
+        fprintf(stderr, "%d\n", (int)err);
+        return (int)err;
+    }
 
     err = cbor_parser_init(buf, len, 0, &parser, &value);
     if (err == CborNoError) {
