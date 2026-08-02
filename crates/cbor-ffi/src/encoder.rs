@@ -202,11 +202,19 @@ pub extern "C" fn cbor_encode_tag(encoder: *mut CborEncoder, tag: u64) -> c_int 
     append_head(e, head(major::TAG, tag))
 }
 
-/// Simple values 24..=31 are reserved for the encodings CBOR uses for floats and
-/// the break byte, so they cannot be requested directly.
+/// Simple values 25..=31 are the encodings CBOR uses for floats and the break
+/// byte, so they cannot be requested directly.
+///
+/// The range is upstream's `value >= HalfPrecisionFloat && value <= Break`, and
+/// it starts at 25, not 24. 24 is the escape byte that introduces a two-byte
+/// simple value, and asking for it here produces `f8 18` -- which upstream's own
+/// parser then rejects as a value under 32 written in two bytes. The encoder is
+/// happy to write what the parser will not read. That asymmetry is upstream's,
+/// and this port keeps it for the same reason it keeps the UTF-8 one: the claim
+/// is equivalence with a commit, not with the specification.
 #[no_mangle]
 pub extern "C" fn cbor_encode_simple_value(encoder: *mut CborEncoder, value: u8) -> c_int {
-    if (24..=31).contains(&value) {
+    if (25..=31).contains(&value) {
         return ERR_ILLEGAL_SIMPLE_TYPE;
     }
     // SAFETY: module contract.
