@@ -29,7 +29,7 @@ CXXFLAGS := -std=c++20 -O2 -I$(INCLUDE) $(QT_CFLAGS)
 # directly, so it tests C sources we do not have. See decisions.md.
 QTESTS := encoder parser tojson
 
-.PHONY: all lib test test-port clean fmt lint symbols fuzz bench
+.PHONY: all lib test test-port test-tools clean fmt lint symbols fuzz bench
 
 all: lib $(QTESTS:%=$(BUILD)/tst_%) $(BUILD)/tst_c90
 
@@ -134,7 +134,22 @@ test-port: $(BUILD)/tst_dup_string-rust $(BUILD)/tst_dup_string-c \
 	  echo "  reader_diff: DIVERGES FROM UPSTREAM"; exit 1; \
 	fi
 
-test: all test-port
+# cbordump and json2cbor are rewritten here rather than being C over the
+# library, so agreeing with upstream is a claim about the rewrite. Both are
+# whole programs, which puts their argument parsing, flag combinations and exit
+# codes out of reach of the Qt suite and of the fuzzers alike.
+#
+# This one needs upstream's tools built, which are binaries and so are not
+# vendored the way libtinycbor-upstream.a is. The script exits 2 and says how to
+# get them when they are missing, and that is a skip rather than a failure; a
+# real divergence exits 1 and stops the build.
+test-tools:
+	@$(CARGO) build --release -q -p cbordump -p json2cbor
+	@$(PORT)/tools_diff.sh; rc=$$?; \
+	if [ $$rc -eq 2 ]; then echo "  (skipped: no upstream tools to compare against)"; \
+	elif [ $$rc -ne 0 ]; then exit 1; fi
+
+test: all test-port test-tools
 	@echo "== original suite, linked against the Rust libtinycbor.a =="
 	@total_pass=0; total_fail=0; \
 	for t in $(QTESTS); do \
