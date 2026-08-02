@@ -41,7 +41,7 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 | **Original suite** | **4,929 / 4,929, zero failures** |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **Differential fuzz** | **6.7M execs, zero divergences** across four targets (two finds, fixed) |
+| **Differential fuzz** | **8.4M execs, zero divergences** across four targets (two finds, fixed) |
 | **Tools vs upstream** | **exact** on 4,509 documents x 20 flag combinations (four finds, fixed) |
 | **`unsafe` blocks** | **80**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
@@ -104,7 +104,9 @@ than bytes and there is no input to hand it. So the fuzzer's bytes *become* the 
 each input is a program of encoder operations, run against both libraries, comparing every
 call's error, the bytes each wrote, and how much more room each said it needed. The output
 buffer size comes out of the input and is deliberately small, because upstream's encoder
-does its most interesting work after it runs out of room.
+does its most interesting work after it runs out of room. One bit of that header switches
+to `cbor_encoder_init_writer`, the callback-driven encoder, which was the last public
+entry point nothing was checking.
 
 **A green board only measures what is wired to it.** `cbordump` and `json2cbor` are
 rewritten in safe Rust rather than being C over the library — the FFI speaks in raw
@@ -119,6 +121,10 @@ For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one
 here is in `cbor-ffi` dereferencing a pointer a C caller handed us, and each carries a
 `// SAFETY:` line naming the invariant. `cbor-core`, which is the entire CBOR implementation, is
 `#![forbid(unsafe_code)]` and contains none.
+
+That paragraph used to be a claim. `make lint` now recomputes the count, re-checks the
+`forbid` attribute, and fails if any block has lost its `SAFETY:` line — which is how it
+came out that seven of the eighty had never had one directly above them.
 
 ## How it fits together
 
@@ -168,12 +174,19 @@ What *is* C, stated plainly:
 Needs a Rust toolchain, a C++ compiler, and Qt6 Test for the original suite.
 
 ```
-make          # library + test binaries
-make test     # run the original suite
-make symbols  # diff exported symbols against upstream
-make lint     # clippy, warnings denied
-make fmt      # rustfmt check
+make            # library + test binaries
+make test       # the original suite, plus this port's own differential tests
+make test-tools # cbordump and json2cbor against upstream's binaries
+make symbols    # diff exported symbols against upstream
+make lint       # clippy, warnings denied
+make fmt        # rustfmt check
+make fuzz       # differential fuzz; DURATION=900 TARGET=encode_diff to pick
+make bench      # the benchmark in bench/methodology.md
 ```
+
+`make test` needs Qt6 Test. `make test-tools` and `make fuzz` additionally need upstream
+checked out and built at `~/tinycbor-upstream` — they say so and skip rather than fail if
+it is not there.
 
 To confirm the tests really are untouched:
 

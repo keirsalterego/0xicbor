@@ -31,7 +31,7 @@ abi_layout       = "asserted"
 [budget]
 # grep -rn "unsafe {" crates/ --include='*.rs' | wc -l — blocks, not mentions.
 unsafe_blocks = 80
-fuzz_seconds  = 4205  # 601s pretty + 1502s json + 901s validate + 1201s encode
+fuzz_seconds  = 5106  # 601s pretty + 1502s json + 901s validate + 2102s encode
 # Two real divergences found by fuzzing. The pretty printer had no
 # CborInvalidType arm, at 420,793 execs in a 900s run. cbor_encode_simple_value
 # rejected simple value 24, which upstream encodes, at 2,653 execs on the new

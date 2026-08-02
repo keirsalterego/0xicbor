@@ -60,6 +60,13 @@ That bookkeeping is most of the non-obvious code in `cborencoder.c`, and it is
 unreachable with a buffer that always fits. So the size comes out of the input, small,
 and most programs overrun on purpose.
 
+Bit 15 of that size word picks `cbor_encoder_init_writer` instead: no buffer at all, a
+callback per fragment. It is a separate branch through the same `append()` with its own
+idea of running out of room, and the `CborEncoderAppendType` it hands the callback is ABI
+surface that nothing else checks — so the callback records that argument alongside the
+bytes, and refuses everything past the same size limit so the error travelling back *out*
+through the encoder gets exercised too. That one bit was worth 40 edges.
+
 The cost of this design is a second interpreter. The program format is specified once,
 in a comment above `run_encoder_program` in the oracle, and implemented twice — the two
 have to agree about the program before they can disagree about the encoder, which means
@@ -136,11 +143,12 @@ it was worth adding: about 55% more of the library, none of it previously fuzzed
 |---:|---:|---|
 | 2,653 | — | **one divergence**, see below |
 | 2,032,920 | 1,201 s | clean, after the fix |
+| 1,644,600 | 901 s | clean, with the writer callback path added |
 
-`encode_diff` reaches 2,001 features on 393 edges. The edge count is lower because the
-encoder is a smaller body of code than the parser; the feature count is the highest of
-the four, which is what you would expect from a target that varies both the calls and
-the amount of room they have to work in.
+`encode_diff` reaches 2,171 features on 433 edges. The edge count is lower than the
+parser targets because the encoder is a smaller body of code; the feature count is the
+highest of the four, which is what a target that varies both the calls and the room they
+have to work in should look like. Adding the writer path took it from 393 edges to 433.
 
 Two clean runs before a real bug is the whole argument for running it longer than the
 minimum. Sixty seconds of differential fuzzing is enough to claim you did it. It is not
