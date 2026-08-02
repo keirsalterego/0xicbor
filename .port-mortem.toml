@@ -5,9 +5,16 @@ source_lang   = "C"
 target_lang   = "Rust"
 kickoff_hash  = "ee5617f3372ebd32f4540001c21cea76fa46610b43197589c8a4a57b4b685aed"
 
+# The window, and where the work sits inside it. First commit is 18:24:04 UTC on
+# the opening day, an empty tree; last is 2026-08-02 04:33:09 UTC. 100 commits,
+# none with an author date differing from its committer date. See decisions.md 24.
+kickoff_utc   = "2026-07-31T18:00:00Z"
+freeze_utc    = "2026-08-03T18:00:00Z"
+first_commit  = "2026-07-31T18:24:04Z"
+
 repo          = "https://github.com/keirsalterego/0xicbor"
-docs          = "https://keirsalterego.github.io/0xicbor/"
-phase         = "port"
+docs          = "docs/src/index.md"
+phase         = "ship"
 
 # Upstream source measured at kickoff: 6456 lines across src/, under the 8k cap.
 source_lines  = 6456
@@ -31,7 +38,12 @@ abi_layout       = "asserted"
 [budget]
 # grep -rn "unsafe {" crates/ --include='*.rs' | wc -l — blocks, not mentions.
 unsafe_blocks = 80
-fuzz_seconds  = 5106  # 601s pretty + 1502s json + 901s validate + 2102s encode
+# Every run is a row in fuzz/history.tsv, which is where these two come from:
+#   awk -F'\t' 'NR>6 {e+=$4; s+=$3} END {print e, s}' fuzz/history.tsv
+# The whole history is 14 runs, because run.sh overwrites fuzz/log*.txt and only
+# the last run per target is otherwise visible in a checkout.
+fuzz_seconds  = 8054
+fuzz_execs    = 13457075
 # Two real divergences found by fuzzing. The pretty printer had no
 # CborInvalidType arm, at 420,793 execs in a 900s run. cbor_encode_simple_value
 # rejected simple value 24, which upstream encodes, at 2,653 execs on the new
@@ -44,7 +56,7 @@ divergences_open  = 0
 # in cbordump, which is a second implementation the library's tests never
 # touch. All fixed, all now in `make test`. See decisions.md 18.
 bugs_found_by_tests = 5
-decisions     = 22
+decisions     = 24
 upstream_issue = "https://github.com/intel/tinycbor/issues/331"
 
 [bench]

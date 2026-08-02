@@ -9,7 +9,7 @@ linkable as a drop-in `libtinycbor.a`.**
 
 The original Qt test suite runs against it unmodified.
 
-[Documentation](https://keirsalterego.github.io/0xicbor/) ·
+[Documentation](docs/src/index.md) ·
 [Decisions](decisions.md) ·
 [Benchmarks](bench/methodology.md)
 
@@ -41,7 +41,7 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 | **Original suite** | **4,929 / 4,929, zero failures** |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **Differential fuzz** | **8.4M execs, zero divergences** across four targets (two finds, fixed) |
+| **Differential fuzz** | **13.5M execs, zero divergences** across four targets (two finds, fixed) — [every run](fuzz/history.tsv) |
 | **Tools vs upstream** | **exact** on 4,509 documents x 20 flag combinations (four finds, fixed) |
 | **`unsafe` blocks** | **80**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
@@ -82,7 +82,7 @@ quoting only the clean runs. Two runs at 60 and 121 seconds came back clean; a 1
 run found a real divergence at 420,793 executions, on a 1,220-byte input of deeply nested
 maps. The pretty printer had no arm for `CborInvalidType` and reported that the input had
 run out, where upstream prints `invalid` and reports the type. The moral is in
-[the fuzzing page](https://keirsalterego.github.io/0xicbor/verification/differential-fuzzing.html):
+[the fuzzing page](docs/src/verification/differential-fuzzing.md):
 60 seconds is enough to claim you fuzzed, not enough to find anything.
 
 The second took four seconds, because it was the first run of a target that had never
@@ -108,6 +108,11 @@ does its most interesting work after it runs out of room. One bit of that header
 to `cbor_encoder_init_writer`, the callback-driven encoder, which was the last public
 entry point nothing was checking.
 
+Each run overwrites its target's log, so `fuzz/log*.txt` only ever shows the most recent
+one and the 13.5M above cannot be read off a checkout. [`fuzz/history.tsv`](fuzz/history.tsv)
+is the ledger — one row per run, with the commit it ran against — and `run.sh` appends to it
+now rather than leaving the earlier runs to be dug out of git.
+
 **A green board only measures what is wired to it.** `cbordump` and `json2cbor` are
 rewritten in safe Rust rather than being C over the library — the FFI speaks in raw
 pointers, and a binary using it would need `unsafe` outside the one crate that is allowed
@@ -116,6 +121,11 @@ the Qt suite tests the library, and both fuzzers call the C ABI directly. Runnin
 against upstream's own binaries on 4,509 documents across every flag combination found
 four bugs, one of which accepted a document upstream refuses. That is
 [decision 18](decisions.md), and the harness now runs in `make test`.
+
+Those 4,509 were the accumulated fuzz corpus, which is generated and not committed, so
+`make test` runs the nine documents that are — 180 cases and a 16-document round trip.
+To repeat the wide sweep, point the harness at a corpus you have grown yourself:
+`tests/port/tools_diff.sh fuzz/corpus/pretty_diff/*`.
 
 For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 80
 here is in `cbor-ffi` dereferencing a pointer a C caller handed us, and each carries a
@@ -168,6 +178,10 @@ What *is* C, stated plainly:
 - **The fuzz oracle** is upstream's C library built as a separate binary. The differential
   fuzzer talks to it over a pipe as a subprocess. It is not FFI and it is not linked in.
 - **`tests/original/`** is upstream's C++ test code, which is the entire point.
+- **`bench/reference/libtinycbor-upstream.a`** is upstream compiled, committed so that
+  `make test` can build each differential test twice, once against each archive, without
+  needing tinycbor checked out next door. It is the thing being compared against. Nothing
+  in `libtinycbor.a` or the tools links against it — see [decision 23](decisions.md).
 
 ## Building
 

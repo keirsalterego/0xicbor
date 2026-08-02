@@ -466,3 +466,57 @@ or `extern "C"` blocks, only `unsafe { }`, because those are the places somethin
 actually go wrong. And it does not chase the number down by wrapping several dereferences
 in one block to make the total look smaller — that would trade a real property, one
 invariant named per operation, for a better-looking figure.
+
+## 23. Upstream's archive is committed, and the port tests link against it
+
+`bench/reference/libtinycbor-upstream.a` is 76 KB of upstream compiled at the pinned commit,
+checked into the repo. Four tests under `tests/port/` are each built twice from one C source
+file, once against that archive and once against ours, and the two transcripts are diffed.
+
+The alternative was to build upstream during `make test`. That would have meant a fresh
+clone could not run the differential tests without also cloning and building tinycbor, and
+the whole point of those tests is that they run. So the comparison target ships with the
+repo.
+
+A static archive of C in a repository whose first claim is "no C" invites scrutiny, so here
+is what it is not. It is not linked into `libtinycbor.a`, which is what a caller gets, and
+not into `cbordump` or `json2cbor`. It is linked into `build/*-c` — test binaries whose only
+job is to produce the transcript that ours is checked against. Deleting it would not change
+a byte of the shipped library; it would only remove the evidence that the library agrees
+with the thing it replaces.
+
+`make symbols` and the ABI layout test read the other file in that directory,
+`symbols-upstream.txt`, for the same reason: the reference has to be in the repo or the
+check is not reproducible by a stranger.
+
+## 24. The work is timestamped, and the timestamps are the proof
+
+A port of a known library is exactly the kind of entry where somebody will wonder whether
+it was written before the window opened. The answer is in the history, and it does not need
+to be taken on trust.
+
+The window opened 2026-07-31 18:00 UTC. The first commit is 18:24:04 UTC, twenty-four
+minutes later, and it is an empty tree: `git init` happened inside the window, not before
+it, and the first file arrives five minutes after that. The last commit is
+2026-08-02 04:33:09 UTC.
+
+```
+git log --format='%h %ad %cd' --date=iso-strict     # 100 commits, none before 18:24
+```
+
+Between those two the 100 commits fall across twelve distinct hours with gaps where a
+person was asleep, which is what real work looks like and what a single squashed drop does
+not. More usefully, nothing has been rewritten:
+
+```
+git log --format='%h %at %ct' | awk '$2!=$3' | wc -l    # 0
+```
+
+Author date and committer date are equal on every commit. A rebase, a `filter-branch`, or a
+backdated `--date=` all leave those two fields disagreeing, so a zero there rules out the
+cheap ways of manufacturing a history after the fact. It is a weaker claim than a signed
+timestamp and a stronger one than a tidy commit log, and it is the honest thing available.
+
+The same reasoning is why `fuzz/history.tsv` records the commit each fuzz run ran against,
+and why `.port-mortem.toml` carries `kickoff_utc`: a number that cannot be tied to a moment
+is a number a reader has to believe.
