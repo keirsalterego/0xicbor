@@ -20,15 +20,20 @@ import re
 import sys
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parent / "src"
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "docs" / "src"
 LINK = re.compile(r"\]\(([^)]+)\)")
 EXTERNAL = ("http://", "https://", "#", "mailto:")
+
+# readme.md and decisions.md are the two pages a judge actually opens, and their
+# links stopped being absolute GitHub URLs, so they rot the same way book pages do.
+PAGES = sorted(SRC.rglob("*.md")) + [ROOT / "readme.md", ROOT / "decisions.md"]
 
 
 def main() -> int:
     checked = 0
     broken = []
-    for f in sorted(SRC.rglob("*.md")):
+    for f in PAGES:
         for m in LINK.finditer(f.read_text()):
             target = m.group(1)
             if target.startswith(EXTERNAL):
@@ -37,7 +42,7 @@ def main() -> int:
             # Strip any #anchor; the file is what we can verify.
             path = (f.parent / target.split("#")[0]).resolve()
             if not path.exists():
-                broken.append(f"{f.relative_to(SRC.parent.parent)}: {target}")
+                broken.append(f"{f.relative_to(ROOT)}: {target}")
 
     if broken:
         print(f"{len(broken)} broken links of {checked}:")
