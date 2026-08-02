@@ -282,5 +282,5 @@ about what it leaves behind rather than what it returns.
   absent. A fast path that never reports an error cannot get the error taxonomy wrong,
   and that is most of what there is to get wrong in a port.
 
-And publish the regression while it is still a regression. This port shipped a 1.48x
+And publish the regression while it is still a regression. This port shipped a 1.49x
 number in its README for a day. That is what made it worth fixing.

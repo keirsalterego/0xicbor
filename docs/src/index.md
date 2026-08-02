@@ -44,7 +44,7 @@ Real output of `make test` and `bench/run.py`, not targets.
 | Symbol parity | **44 / 44**, zero `nm` diff against upstream |
 | ABI layout | asserted against C-dumped offsets, passing |
 | `unsafe` blocks | **80**, all in the shim; `cbor-core` at zero |
-| Differential fuzz | **8.4M execs, zero divergences**, four targets |
+| Differential fuzz | **13.5M execs, zero divergences**, four targets |
 | Tools vs upstream | **exact**, 4,509 documents by 20 flag combinations |
 | Dependencies | **zero** |
 | Speed vs C | **3.4x faster** (mean p50 over 16 measurements) |

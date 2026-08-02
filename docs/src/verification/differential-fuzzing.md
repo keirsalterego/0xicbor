@@ -248,6 +248,33 @@ $ KEEP_GOING=1 ./fuzz/run.sh # keep going past divergences, collect them all
 Everything is teed to `fuzz/log.txt`. A divergence leaves a reproducer in
 `fuzz/artifacts/pretty_diff/` and exits non-zero.
 
+## Where the totals come from
+
+Each run overwrites its target's log, so `fuzz/log*.txt` only ever shows the most recent
+run of each. That is fine for reading the last result and useless for anyone checking a
+number like "13.5M executions", which sums runs whose logs are gone.
+
+So `fuzz/history.tsv` is the ledger. One row per run, with the commit it ran against:
+
+```
+date        target       seconds  execs    commit   result
+2026-08-01  pretty_diff  901      1507421  c60944c  clean
+2026-08-02  encode_diff  901      1644600  f8077e0  clean
+```
+
+`run.sh` appends a row when it finishes, so the file stays true without anyone
+maintaining it. The published totals are that file added up:
+
+```console
+$ awk -F'\t' 'NR>6 {e+=$4; s+=$3} END {print e, s}' fuzz/history.tsv
+13457075 8054
+```
+
+Fourteen runs, 13,457,075 executions, 8,054 seconds, nothing outstanding. The two
+divergences above are not rows in it: the runs that found them had their logs replaced by
+the commits that fixed them, which is exactly the gap the ledger exists to close. Their
+reproducers are in `tests/port/corpus/` instead, which is the stronger evidence anyway.
+
 ---
 
 *Verified 2026-08-02. Re-run any of it with `TARGET=<name> ./fuzz/run.sh <seconds>`.*

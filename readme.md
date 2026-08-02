@@ -27,11 +27,6 @@ The proof is the test suite. `tests/original/` holds upstream's Qt tests copied 
 with their SHA-256 hashes pinned at kickoff. They are compiled and linked against the Rust
 static library with no edits. Whatever they report is what this port scores.
 
-```
-make        # builds libtinycbor.a and the original test binaries
-make test   # runs them, prints per-binary pass/fail
-```
-
 ## Status
 
 The numbers below are the real output of `make test` and `bench/run.py`, not targets.
@@ -41,100 +36,59 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 | **Original suite** | **4,929 / 4,929, zero failures** |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **Differential fuzz** | **13.5M execs, zero divergences** across four targets (two finds, fixed) — [every run](fuzz/history.tsv) |
-| **Tools vs upstream** | **exact** on 4,509 documents x 20 flag combinations (four finds, fixed) |
+| **Differential fuzz** | **13.5M execs, zero divergences**, four targets, [every run logged](fuzz/history.tsv) |
+| **Tools vs upstream** | **exact** on 4,509 documents x 20 flag combinations |
 | **`unsafe` blocks** | **80**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
 | **Speed vs C** | **3.4x faster** (mean p50 over 16 throughput measurements) |
 
-Every test in Intel's suite that can apply to a port passes. `tst_cpp` is the exception and
-always was: it `#include`s upstream's `.c` files directly, so it tests C sources a Rust port
-does not have. That is 2 rows, which is why the total is 4,929 and not 4,931, and it has its
-own entry in [decisions.md](decisions.md) rather than being quietly dropped.
+Two of those need a word about what a fresh clone reproduces. The fuzz total sums runs whose
+logs were overwritten, so `fuzz/history.tsv` records each one against the commit it ran on.
+The 4,509 documents were the accumulated fuzz corpus, which is generated and not committed,
+so `make test` checks the nine that are. Both are spelled out on the
+[scoreboard](docs/src/verification/scoreboard.md).
 
-**Parsing is 2.7x faster than the C**, on every one of the eight corpus files, between
-2.1x and 3.8x. It was 1.49x *slower* on all eight when it was a literal transliteration.
-Three rounds of that came back from reading the generated code, and the last one from
-noticing that `cbor_value_advance` decodes every item it walks past and then throws all
-of it away. Skipping a subtree by scanning instead is
-[decision 16](decisions.md), and it hands back to the recursive code on anything unusual,
-so every error the API reports still comes from the original path.
+`tst_cpp` is the one exception, and always was: it `#include`s upstream's `.c` files
+directly, so it tests C sources a Rust port does not have. That is the 2 rows between 4,929
+and 4,931. It stays failing with [its own entry](decisions.md) rather than being quietly
+dropped, which is the rule the whole scoreboard follows.
 
-Pretty-printing is 4.4x, but most of that is upstream calling `vfprintf` once per byte in
-`hexDump` rather than anything about decoding, so it is not the number to quote.
+### Where it loses
 
-The C still starts a process faster, by 130 µs from a binary 119x larger, and this port
-uses 11% to 66% more memory. That is the only one of the seventeen measurements it loses,
-and it is stated here for the same reason the 1.49x was: full numbers, the compiler-flag
-experiments behind the fixes, and the method are in
-[bench/methodology.md](bench/methodology.md).
+Parsing is 2.7x faster on all eight corpus files, but it was **1.49x slower on all eight**
+for a day, and the [methodology](bench/methodology.md) keeps that figure rather than erasing
+it. Printing is 4.4x and most of that is upstream calling `vfprintf` once per byte, not
+anything about decoding, so it is not the number to quote.
 
-**A bug in upstream, filed:** [intel/tinycbor#331](https://github.com/intel/tinycbor/issues/331).
-`cbor_value_to_json_advance` is documented to reject text strings that are not valid UTF-8
-and does not, so it returns success having emitted a JSON document that is not UTF-8. The
-pretty printer in the same library rejects the same input. This port reproduces the
-behaviour deliberately, which is [decision 17](decisions.md): the equivalence claim is
-against a specific commit, and being bug-compatible is what makes the differential fuzzer
-mean anything.
+The C still starts a process faster, 1.17x at p50 and 3.15x at p99, from a binary 119x
+smaller, and this port uses 11% to 66% more memory. That is the only one of the seventeen
+measurements it loses, and it is here for the same reason the 1.49x is.
 
-**The fuzzer also found two bugs of ours**, and both are worth saying out loud rather than
-quoting only the clean runs. Two runs at 60 and 121 seconds came back clean; a 15-minute
-run found a real divergence at 420,793 executions, on a 1,220-byte input of deeply nested
-maps. The pretty printer had no arm for `CborInvalidType` and reported that the input had
-run out, where upstream prints `invalid` and reports the type. The moral is in
-[the fuzzing page](docs/src/verification/differential-fuzzing.md):
-60 seconds is enough to claim you fuzzed, not enough to find anything.
+### What the checking found
 
-The second took four seconds, because it was the first run of a target that had never
-existed. `cbor_encode_simple_value` rejected the range 24..=31; upstream's guard starts at
-25, so simple value 24 is encodable and comes out as `f8 18` — which upstream's own parser
-then refuses. The encoder writes what the parser will not read, this port now does the
-same, and `tst_encoder` passes 1,596 rows without ever asking for that value.
+Three separate things, none of them found by the original suite:
 
-Both fixes keep their reproducer under `tests/port/corpus/`, replayed on every later run.
+- **A bug in upstream, [filed](https://github.com/intel/tinycbor/issues/331).**
+  `cbor_value_to_json_advance` is documented to reject text that is not valid UTF-8 and does
+  not. This port reproduces it deliberately ([decision 17](decisions.md)): the claim is
+  equivalence with a specific commit, and being bug-compatible is what makes the fuzzer mean
+  anything.
+- **Two bugs of ours, from the fuzzer.** A missing `CborInvalidType` arm in the pretty
+  printer, found at 420,793 executions into a 15-minute run after two shorter runs came back
+  clean. And `cbor_encode_simple_value` rejecting a value upstream encodes, found four
+  seconds into a target that had never run before. Both are in
+  [the fuzzing page](docs/src/verification/differential-fuzzing.md), with reproducers under
+  `tests/port/corpus/`.
+- **Four bugs in the tools**, which are a *second* parser and printer that nothing was
+  checking, since the Qt suite tests the library and the fuzzers call the C ABI directly.
+  That is [decision 18](decisions.md).
 
-There are four targets. The printer and the JSON converter share a parser and very little
-else, and JSON has to refuse things diagnostic notation renders happily, so `json_diff`
-reaches 1,188 edges against the printer's 765. `validate_diff` compares a predicate rather
-than a rendering: no output to diff, so the error code is the whole answer.
+Sixty seconds is enough to claim you fuzzed. It is not enough to find anything.
 
-`encode_diff` is the one that mattered. The other three read CBOR; half of tinycbor writes
-it, and nothing differential had touched that half, because an encoder takes calls rather
-than bytes and there is no input to hand it. So the fuzzer's bytes *become* the calls —
-each input is a program of encoder operations, run against both libraries, comparing every
-call's error, the bytes each wrote, and how much more room each said it needed. The output
-buffer size comes out of the input and is deliberately small, because upstream's encoder
-does its most interesting work after it runs out of room. One bit of that header switches
-to `cbor_encoder_init_writer`, the callback-driven encoder, which was the last public
-entry point nothing was checking.
-
-Each run overwrites its target's log, so `fuzz/log*.txt` only ever shows the most recent
-one and the 13.5M above cannot be read off a checkout. [`fuzz/history.tsv`](fuzz/history.tsv)
-is the ledger — one row per run, with the commit it ran against — and `run.sh` appends to it
-now rather than leaving the earlier runs to be dug out of git.
-
-**A green board only measures what is wired to it.** `cbordump` and `json2cbor` are
-rewritten in safe Rust rather than being C over the library — the FFI speaks in raw
-pointers, and a binary using it would need `unsafe` outside the one crate that is allowed
-any. So they are a *second* parser and a second printer, and nothing was checking them:
-the Qt suite tests the library, and both fuzzers call the C ABI directly. Running them
-against upstream's own binaries on 4,509 documents across every flag combination found
-four bugs, one of which accepted a document upstream refuses. That is
-[decision 18](decisions.md), and the harness now runs in `make test`.
-
-Those 4,509 were the accumulated fuzz corpus, which is generated and not committed, so
-`make test` runs the nine documents that are — 180 cases and a 16-document round trip.
-To repeat the wide sweep, point the harness at a corpus you have grown yourself:
-`tests/port/tools_diff.sh fuzz/corpus/pretty_diff/*`.
-
-For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 80
-here is in `cbor-ffi` dereferencing a pointer a C caller handed us, and each carries a
-`// SAFETY:` line naming the invariant. `cbor-core`, which is the entire CBOR implementation, is
-`#![forbid(unsafe_code)]` and contains none.
-
-That paragraph used to be a claim. `make lint` now recomputes the count, re-checks the
-`forbid` attribute, and fails if any block has lost its `SAFETY:` line — which is how it
-came out that seven of the eighty had never had one directly above them.
+`make lint` recomputes the `unsafe` count rather than trusting the number above, re-checks
+the `forbid` attribute, and fails if a block has lost its `SAFETY:` line. That is how it came
+out that seven of the eighty had never had one. For scale: uv ships 73 blocks, Bun ships
+13,044.
 
 ## How it fits together
 
@@ -151,18 +105,14 @@ fuzz/               differential targets against an out-of-process C oracle
 bench/              methodology, results, and the upstream reference build
 ```
 
-Two constraints hold the design together.
-
-**Layout parity.** `cbor.h` implements 59 of its 103 public functions as `static inline`
-accessors that read struct fields directly. Those compile into the *caller*, not into the
-library, so `CborValue`, `CborParser` and `CborEncoder` must match the C layout exactly or
-the tests read garbage. The numbers were dumped from a C program at kickoff into
-[`crates/cbor-ffi/abi-layout.txt`](crates/cbor-ffi/abi-layout.txt) and are asserted in a
-Rust test.
-
-**Symbol parity.** The remaining 44 functions are real exported symbols. `make symbols`
-diffs `nm -g --defined-only` on this library against upstream's. The target is an empty
-diff, and it currently is one.
+Two constraints hold it together. **Layout parity**, because `cbor.h` implements 59 of its
+103 public functions as `static inline` accessors that read struct fields directly, and those
+compile into the *caller*: get the layout wrong and the tests read garbage. The sizes and
+offsets were dumped from a C program at kickoff into
+[`abi-layout.txt`](crates/cbor-ffi/abi-layout.txt) and are asserted in a Rust test. And
+**symbol parity** for the other 44, which are real exported symbols; `make symbols` diffs
+`nm -g --defined-only` against upstream and wants an empty answer.
+[More on both](docs/src/architecture/abi-shim.md).
 
 ## The C question
 
@@ -172,16 +122,16 @@ against upstream.
 What *is* C, stated plainly:
 
 - **The headers** in `crates/cbor-ffi/include/` are upstream's, vendored so a fresh clone
-  builds without tinycbor checked out next door. They are the ABI contract. The `static
-  inline` accessors in them compile into whatever program includes them, never into
-  `libtinycbor.a`.
-- **The fuzz oracle** is upstream's C library built as a separate binary. The differential
-  fuzzer talks to it over a pipe as a subprocess. It is not FFI and it is not linked in.
+  builds without tinycbor next door. They are the ABI contract, and their `static inline`
+  accessors compile into whatever program includes them, never into `libtinycbor.a`.
+- **The fuzz oracle** is upstream built as a separate binary. The fuzzer talks to it over a
+  pipe as a subprocess. Not FFI, not linked in.
 - **`tests/original/`** is upstream's C++ test code, which is the entire point.
-- **`bench/reference/libtinycbor-upstream.a`** is upstream compiled, committed so that
-  `make test` can build each differential test twice, once against each archive, without
-  needing tinycbor checked out next door. It is the thing being compared against. Nothing
-  in `libtinycbor.a` or the tools links against it — see [decision 23](decisions.md).
+- **`bench/reference/libtinycbor-upstream.a`** is upstream compiled, committed so `make test`
+  can build each differential test twice, once against each archive. It is the thing being
+  compared against. Nothing shipped links against it ([decision 23](decisions.md)).
+
+Longer version: [where the C ends](docs/src/architecture/the-c-question.md).
 
 ## Building
 
@@ -192,21 +142,21 @@ make            # library + test binaries
 make test       # the original suite, plus this port's own differential tests
 make test-tools # cbordump and json2cbor against upstream's binaries
 make symbols    # diff exported symbols against upstream
-make lint       # clippy, warnings denied
+make lint       # clippy, the unsafe budget, and relative links
 make fmt        # rustfmt check
 make fuzz       # differential fuzz; DURATION=900 TARGET=encode_diff to pick
 make bench      # the benchmark in bench/methodology.md
 ```
 
-`make test` needs Qt6 Test. `make test-tools` and `make fuzz` additionally need upstream
-checked out and built at `~/tinycbor-upstream` — they say so and skip rather than fail if
-it is not there.
-
-To confirm the tests really are untouched:
+`make test-tools` and `make fuzz` additionally want upstream checked out and built at
+`~/tinycbor-upstream`. Without it they say so and skip rather than fail, and the 4,929 rows
+are unaffected. To confirm the tests really are untouched:
 
 ```
 cd tests/original && sha256sum -c hashes.txt
 ```
+
+[Build troubleshooting](docs/src/reference/troubleshooting.md) covers the rest.
 
 ## License
 

@@ -31,7 +31,7 @@ requested.
 
 ```console
 $ make test     # 4,929 / 4,929, and the port's own differential tests
-$ make lint     # clippy with warnings denied, plus the unsafe budget check
+$ make lint     # clippy, the unsafe budget check, and relative links
 $ make fmt      # rustfmt --check
 $ make symbols  # 44/44 exported, zero nm diff against upstream
 ```
@@ -46,6 +46,15 @@ $ TARGET=encode_diff DURATION=900 make fuzz
 Sixty seconds is enough to say you fuzzed. It is not enough to find anything. Both real
 divergences found so far needed either fifteen minutes or a target that had never run
 before.
+
+`run.sh` appends a row to `fuzz/history.tsv` when it finishes, so a long run you did is
+recorded even though the log it wrote gets overwritten by the next one. Leave that row in
+your PR; it is the only evidence the run happened.
+
+`make lint` also resolves every relative link in the book, `readme.md` and `decisions.md`,
+and fails on the first one pointing at a file that is not there. mdBook turns a broken link
+into a 404 without complaining, so a rotted page looks exactly like a healthy one until
+somebody clicks it.
 
 ## Changing behaviour
 
