@@ -74,13 +74,20 @@ fn as_whole_u64(v: f64) -> Option<u64> {
     (i as f64 == v).then_some(i)
 }
 
+/// Renders one item, and reports whether it filled a slot in its container.
+///
+/// It always does, except for a tag that runs out of recursion budget: upstream
+/// prints the marker and returns without touching the item the tag applies to,
+/// and a tag of its own never counts towards a container's total. The item is
+/// therefore still owed, and the enclosing container renders it next -- so the
+/// answer here is `false` and only there.
 pub fn value(
     out: &mut String,
     r: &mut Reader,
     flags: i32,
     recursions_left: i32,
     after: After,
-) -> Result<(), CborError> {
+) -> Result<bool, CborError> {
     let h = r.head()?;
     match h.major {
         0 => {
@@ -100,7 +107,7 @@ pub fn value(
             out.push_str(indicator(r.buf, r.pos, flags));
             r.pos += h.size;
         }
-        2 | 3 => return string(out, r, &h, flags, after),
+        2 | 3 => return string(out, r, &h, flags, after).map(|()| true),
         4 | 5 => {
             let ind = indicator(r.buf, r.pos, flags);
             out.push(if h.major == 4 { '[' } else { '{' });
@@ -115,22 +122,32 @@ pub fn value(
             // upstream does that before it writes the closing bracket.
             after.apply(r)?;
             out.push(if h.major == 4 { ']' } else { '}' });
-            return Ok(());
+            return Ok(true);
         }
         6 => {
             let _ = write!(out, "{}{}(", h.value, indicator(r.buf, r.pos, flags));
             r.pos += h.size;
-            if recursions_left > 0 {
+            // Upstream steps off the tag with cbor_value_advance_fixed, which
+            // preparses whatever follows, and gives up if that fails -- before
+            // it looks at how much recursion budget is left. Recursing does the
+            // same check on the way in, so this only matters on the branch that
+            // does not recurse: a document ending in a tag at the depth limit
+            // has run out of data, and saying so beats printing a marker for a
+            // nesting problem that is not the reason the render stopped.
+            r.preparse()?;
+            let filled = if recursions_left > 0 {
                 // A tag does not occupy a slot in its container, so the item it
                 // tags inherits what happens after the pair of them.
-                value(out, r, flags, recursions_left - 1, after)?;
+                value(out, r, flags, recursions_left - 1, after)?
             } else {
-                // Upstream does not skip the tagged item here, so the caller
-                // is left mid-stream and reports garbage at the end. Kept.
+                // The tagged item is deliberately left unread, matching
+                // upstream, which means the slot it was going to fill is still
+                // open. See this function's doc comment.
                 out.push_str(RECURSION_LIMIT);
-            }
+                false
+            };
             out.push(')');
-            return Ok(());
+            return Ok(filled);
         }
         _ => {
             match h.ai {
@@ -146,7 +163,8 @@ pub fn value(
             r.pos += h.size;
         }
     }
-    after.apply(r)
+    after.apply(r)?;
+    Ok(true)
 }
 
 fn float(out: &mut String, h: &Head, flags: i32) {
@@ -179,6 +197,30 @@ fn float(out: &mut String, h: &Head, flags: i32) {
     out.push_str(suffix);
 }
 
+/// What may follow the item about to be rendered inside an indefinite
+/// container that has taken `filled` items so far.
+///
+/// A break always ends an indefinite array. In a map it may only arrive on a
+/// pair boundary, so it is allowed after this item exactly when this item makes
+/// the count even.
+fn break_after(is_map: bool, filled: u64) -> After {
+    if is_map && filled.is_multiple_of(2) {
+        After::Next
+    } else {
+        After::BreakOrNext
+    }
+}
+
+/// The same question for a definite container: whatever follows the last item
+/// belongs to the enclosing container, so this one stops looking.
+fn stop_after(owed: u64) -> After {
+    if owed > 1 {
+        After::Next
+    } else {
+        After::Stop
+    }
+}
+
 fn container(
     out: &mut String,
     r: &mut Reader,
@@ -192,8 +234,16 @@ fn container(
         // Upstream still walks to the end of the container so the dump can
         // continue after it.
         if h.indefinite() {
+            // Same pair rule the rendering path below enforces: this container
+            // is not being printed, but it still has to be well formed for the
+            // dump to carry on after it.
+            let mut items = 0u64;
             while r.peek() != Some(BREAK) {
                 cbor::skip(r, MAX_RECURSIONS)?;
+                items += 1;
+            }
+            if h.major == 5 && !items.is_multiple_of(2) {
+                return Err(CborError::UnexpectedBreak);
             }
             r.pos += 1;
         } else {
@@ -206,37 +256,84 @@ fn container(
 
     let is_map = h.major == 5;
     if h.indefinite() {
+        // Whether a break ends the container depends on how many items it has
+        // taken, and a tag that ran out of recursion budget renders without
+        // taking one. So the count that decides it is the filled slots, not the
+        // rendered positions -- upstream counts the same way, by only toggling
+        // its map-key flag on items that are not tags.
+        let mut filled = 0u64;
         let mut first = true;
-        while r.peek() != Some(BREAK) {
+        loop {
+            if r.peek() == Some(BREAK) {
+                // Halfway through a pair, a break is not an ending.
+                if is_map && !filled.is_multiple_of(2) {
+                    return Err(CborError::UnexpectedBreak);
+                }
+                break;
+            }
             if !first {
                 out.push_str(", ");
             }
             first = false;
-            // A break code between a key and its value is not an ending, which
-            // is why only the map's value may be followed by one.
-            let first_after = if is_map {
-                After::Next
-            } else {
-                After::BreakOrNext
-            };
-            value(out, r, flags, recursions_left, first_after)?;
-            if is_map {
-                out.push_str(": ");
-                value(out, r, flags, recursions_left, After::BreakOrNext)?;
+            // A break is only an ending on an even boundary, and the item about
+            // to be rendered is the one that moves the count. Rejecting it here
+            // rather than after the fact is what upstream does -- it checks at
+            // the item's own advance -- and it matters for a tagged item, whose
+            // closing bracket is never reached.
+            if value(out, r, flags, recursions_left, break_after(is_map, filled))? {
+                filled += 1;
+            }
+            if !is_map {
+                continue;
+            }
+            out.push_str(": ");
+            if r.peek() == Some(BREAK) {
+                // An even count means the break really does end the container,
+                // but the render is committed to a value. Upstream's iterator
+                // is left holding CborInvalidType and its printer has an arm
+                // for exactly that: the word, and the type as the error.
+                out.push_str("invalid");
+                return Err(CborError::UnknownType);
+            }
+            if value(out, r, flags, recursions_left, break_after(is_map, filled))? {
+                filled += 1;
             }
         }
         r.pos += 1;
     } else {
-        for i in 0..count {
-            if i > 0 {
-                out.push_str(if is_map && i % 2 == 1 { ": " } else { ", " });
+        // Driven by how many items the container still owes rather than by a
+        // fixed index, because a tag that hits the recursion limit renders
+        // without filling its slot and the item it was tagging is then rendered
+        // by the next turn of this loop. Upstream gets that for free: its loop
+        // condition is the iterator's own remaining count, which the tag never
+        // decremented.
+        //
+        // A map renders a whole pair per turn, and the count is only consulted
+        // at the top, so a map whose slots run out mid-pair still owes a value.
+        let mut owed = count;
+        let mut first = true;
+        while owed > 0 {
+            if !first {
+                out.push_str(", ");
             }
-            let after = if i + 1 < count {
-                After::Next
-            } else {
-                After::Stop
-            };
-            value(out, r, flags, recursions_left, after)?;
+            first = false;
+            if value(out, r, flags, recursions_left, stop_after(owed))? {
+                owed -= 1;
+            }
+            if !is_map {
+                continue;
+            }
+            out.push_str(": ");
+            if owed == 0 {
+                // Nothing left to spend on the value half. Upstream's iterator
+                // is holding CborInvalidType by now, and its printer has the
+                // arm for that: the word, and the type as the error.
+                out.push_str("invalid");
+                return Err(CborError::UnknownType);
+            }
+            if value(out, r, flags, recursions_left, stop_after(owed))? {
+                owed -= 1;
+            }
         }
     }
     Ok(())

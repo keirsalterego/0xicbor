@@ -102,7 +102,7 @@ fn to_json(
             let mut text = String::new();
             let res = pretty::value(&mut text, r, pretty::DEFAULT_FLAGS, MAX_RECURSIONS, after);
             out.extend_from_slice(text.as_bytes());
-            return res;
+            return res.map(|_| ());
         }
 
         // Both string forms are built whole before anything is written, so a

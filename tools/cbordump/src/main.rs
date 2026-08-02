@@ -140,7 +140,7 @@ fn dump(sink: &mut Stdout, data: &[u8], print_json: bool, flags: i32) -> Result<
             cbor::After::Stop,
         );
         out.extend_from_slice(text.as_bytes());
-        result
+        result.map(|_| ())
     };
 
     // Upstream writes to stdout as it formats, so whatever it managed before
