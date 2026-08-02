@@ -37,9 +37,14 @@ Qt is only needed to *run upstream's tests*. If all you want is the library,
 | `make bench` | rebuild the drivers and rewrite `bench/results.json` |
 | `make clean` | remove `build/` and `target/` |
 
-`make test` needs Qt6. `make test-tools`, `make fuzz` and `make bench` additionally want
-upstream checked out and built at `~/tinycbor-upstream`; they say so and skip rather than
-fail when it is not there. [Troubleshooting](troubleshooting.md) has the exact commands.
+`make test` needs Qt6. Everything else runs from a fresh clone with nothing beside it:
+`make bench` and `make fuzz` both fall back to `bench/reference/libtinycbor-upstream.a`,
+which is committed, so the C side of every comparison is already here.
+
+`make test-tools` is the exception. It compares against upstream's `cbordump` and
+`json2cbor` *binaries*, and binaries are not vendored, so without a checkout it says so and
+skips rather than fails. [Troubleshooting](troubleshooting.md) has the exact commands if you
+want that comparison too.
 
 ## Overriding tools
 

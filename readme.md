@@ -148,9 +148,11 @@ make fuzz       # differential fuzz; DURATION=900 TARGET=encode_diff to pick
 make bench      # the benchmark in bench/methodology.md
 ```
 
-`make test-tools` and `make fuzz` additionally want upstream checked out and built at
-`~/tinycbor-upstream`. Without it they say so and skip rather than fail, and the 4,929 rows
-are unaffected. To confirm the tests really are untouched:
+Everything above runs from a fresh clone with nothing else installed, `make fuzz` included:
+the oracle falls back to the committed reference archive when there is no tinycbor checkout
+to build against. The one exception is `make test-tools`, which compares against upstream's
+`cbordump` and `json2cbor` binaries; those are not vendored, so without them it says so and
+skips rather than fails. To confirm the tests really are untouched:
 
 ```
 cd tests/original && sha256sum -c hashes.txt

@@ -11,7 +11,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 bench=$root/bench
 out=$bench/build
 inc=$root/crates/cbor-ffi/include
-upstream_inc=${TINYCBOR_UPSTREAM:-/home/keir/tinycbor-upstream}/src
+upstream_inc=${TINYCBOR_UPSTREAM:-$HOME/tinycbor-upstream}/src
 
 lib_c=$bench/reference/libtinycbor-upstream.a
 lib_rust=$root/target/release/libtinycbor.a

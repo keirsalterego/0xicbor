@@ -36,7 +36,7 @@ differential test under `tests/port/` instead, run by `make test` against upstre
 | Third-party dependencies | 0 |
 | Differential fuzz | 13.5M execs, **zero divergences**, four targets, [history](differential-fuzzing.md) |
 | Tools vs upstream | exact on 4,509 documents x 20 flag combinations, [decision 18](../reference/decisions.md) |
-| Decision log entries | 24 |
+| Decision log entries | 25 |
 
 ## Reading this honestly
 
@@ -65,9 +65,10 @@ $ tests/port/tools_diff.sh fuzz/corpus/pretty_diff/*
 ```
 
 The fuzz total is the same shape of claim, answered by
-[the ledger](differential-fuzzing.md). Comparing the tools also needs upstream's
-`cbordump` and `json2cbor` built at `~/tinycbor-upstream`; without them `make test-tools`
-says so and skips, and the 4,929 rows above are unaffected.
+[the ledger](differential-fuzzing.md). Comparing the tools also needs upstream's `cbordump`
+and `json2cbor` *binaries*, which are not vendored the way the archive is; without them
+`make test-tools` says so and skips, and the 4,929 rows above are unaffected. Every other
+target here, `make fuzz` and `make bench` included, runs from a fresh clone.
 
 ---
 

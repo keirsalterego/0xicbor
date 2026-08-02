@@ -520,3 +520,29 @@ timestamp and a stronger one than a tidy commit log, and it is the honest thing 
 The same reasoning is why `fuzz/history.tsv` records the commit each fuzz run ran against,
 and why `.port-mortem.toml` carries `kickoff_utc`: a number that cannot be tied to a moment
 is a number a reader has to believe.
+
+## 25. The fuzz oracle falls back to the committed archive
+
+`fuzz/oracle/build.sh` used to require a tinycbor checkout at `~/tinycbor-upstream` and exit
+if there was not one. That was fine on the machine this was written on and wrong everywhere
+else: it meant the differential fuzzer, which is most of the evidence for behavioural
+equivalence, could not be run by anyone who had only cloned this repository. They would have
+had to take `fuzz/log.txt` on trust, and a log nobody else can regenerate is barely evidence
+at all.
+
+The oracle includes exactly two upstream headers, `cbor.h` and `cborjson.h`. Both are already
+vendored in `crates/cbor-ffi/include/`, and upstream compiled at the pinned commit is already
+committed as `bench/reference/libtinycbor-upstream.a` for the reasons in
+[23](#23-upstreams-archive-is-committed-and-the-port-tests-link-against-it). So the pieces
+were all here and the script simply was not looking for them. It does now, and prints which
+source it used.
+
+A checkout still takes precedence when one exists, because pointing `TINYCBOR=` at a
+different upstream commit is the only way to fuzz against one, and that is worth keeping.
+
+This closes the last target that needed something outside the repository. `make`, `make
+test`, `make symbols`, `make lint`, `make bench` and `make fuzz` all run from a fresh clone.
+`make test-tools` still does not, because it compares against upstream's `cbordump` and
+`json2cbor` *binaries* rather than a library, and vendoring built executables is a different
+and worse proposition than vendoring a 76 KB archive. It skips with an explanation instead of
+failing.

@@ -53,8 +53,12 @@ non-zero and stops the build.
 no oracle at .../fuzz/oracle/cbor-oracle -- run fuzz/oracle/build.sh
 ```
 
-Same cause: the differential oracle is upstream's C compiled into a standalone binary, and
-it needs the checkout above. `fuzz/run.sh` builds it for you if the sources are there.
+The differential oracle is upstream's C compiled into a standalone binary, and `fuzz/run.sh`
+builds it for you. It does not need the checkout above: without one it compiles
+`fuzz/oracle/cbor-oracle.c` against the vendored headers and the committed
+`bench/reference/libtinycbor-upstream.a`, and says which of the two it used. A checkout
+still wins when you have one, since pointing `TINYCBOR=` at a different upstream commit is
+the only way to fuzz against one.
 
 You also need nightly Rust and `cargo-fuzz`:
 
