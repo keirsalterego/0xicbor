@@ -46,6 +46,7 @@ const TAG_NEGATIVE_BIGNUM: u64 = 3;
 const TAG_EXPECTED_BASE64: u64 = 22;
 const TAG_EXPECTED_BASE16: u64 = 23;
 
+const ERR_IO: c_int = 4;
 const ERR_UNKNOWN_TYPE: c_int = 259;
 const ERR_NESTING_TOO_DEEP: c_int = 1025;
 const ERR_JSON_KEY_NOT_STRING: c_int = 1281;
@@ -475,7 +476,16 @@ pub extern "C" fn cbor_value_to_json_advance(
     if err != NO_ERROR {
         return err;
     }
+    // Upstream checks every fprintf into the caller's FILE* and answers
+    // CborErrorIO when one fails. Buffering the whole document and writing it
+    // once leaves a single return to check, and a full sink is still a failed
+    // conversion rather than a truncated one.
+    //
     // SAFETY: `out` is an open FILE* per the module contract.
-    unsafe { fwrite(buf.as_ptr() as *const c_void, 1, buf.len(), out) };
-    NO_ERROR
+    let written = unsafe { fwrite(buf.as_ptr() as *const c_void, 1, buf.len(), out) };
+    if written == buf.len() {
+        NO_ERROR
+    } else {
+        ERR_IO
+    }
 }

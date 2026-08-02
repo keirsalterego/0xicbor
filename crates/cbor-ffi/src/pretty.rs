@@ -32,6 +32,7 @@ const TYPE_FLOAT: u8 = 0xfa;
 const TYPE_DOUBLE: u8 = 0xfb;
 
 const MAX_RECURSIONS: i32 = 1024;
+const ERR_IO: c_int = 4;
 const ERR_UNKNOWN_TYPE: c_int = 259;
 const ERR_INVALID_UTF8: c_int = 516;
 const ERR_UNSUPPORTED_TYPE: c_int = 1026;
@@ -424,11 +425,25 @@ pub extern "C" fn cbor_value_to_pretty_advance_flags(
 ) -> c_int {
     match render(value, flags) {
         Err(e) => e,
-        Ok(s) => {
-            // SAFETY: `out` is an open FILE* per the module contract.
-            unsafe { fwrite(s.as_ptr() as *const c_void, 1, s.len(), out) };
-            NO_ERROR
-        }
+        // SAFETY: `out` is an open FILE* per the module contract.
+        Ok(s) => unsafe { emit(&s, out) },
+    }
+}
+
+/// Writes the finished rendering, reporting a sink that would not take it.
+///
+/// Upstream checks the return of every `fprintf` into the caller's `FILE*` and
+/// answers `CborErrorIO` when one fails, so a full buffer or a closed pipe is a
+/// failed conversion rather than a silently truncated one. Buffering the whole
+/// rendering and writing it once means there is exactly one return to check
+/// here, and it was not being checked.
+///
+/// SAFETY: `out` must be an open `FILE*`, per the module contract.
+unsafe fn emit(s: &str, out: *mut c_void) -> c_int {
+    if fwrite(s.as_ptr() as *const c_void, 1, s.len(), out) == s.len() {
+        NO_ERROR
+    } else {
+        ERR_IO
     }
 }
 
