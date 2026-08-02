@@ -37,7 +37,7 @@ fuzz_seconds  = 1502  # 601s pretty_diff + 901s json_diff; history in the docs
 # fixture in tests/port/corpus/, and the 901s run above is the re-verification.
 divergences_found = 1
 divergences_open  = 0
-decisions     = 17
+decisions     = 18
 upstream_issue = "https://github.com/intel/tinycbor/issues/331"
 
 [bench]

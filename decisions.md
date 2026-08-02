@@ -325,3 +325,43 @@ against upstream, so anything both get wrong is invisible to it. Taking upstream
 for every successful conversion in the corpus and handing it to a strict JSON parser is a
 comparison against the *specification* instead, and 760 of roughly 27,000 conversions came
 back unparseable.
+
+## 18. The tools are a second implementation, and it had drifted
+
+`cbordump` and `json2cbor` are rewritten in safe Rust rather than being C over the
+library. They have to be: `cbor-ffi` speaks in raw pointers, and a binary that consumed
+that API would need `unsafe` in it, which is exactly what the budget is meant to keep in
+one place. So `tools/cbordump/src/pretty.rs` is a second diagnostic-notation printer next
+to `crates/cbor-ffi/src/pretty.rs`, and `tools/cbordump/src/cbor.rs` a second parser.
+
+Nothing checked the second one. Upstream's Qt suite tests the library, and both
+differential fuzzers call the C ABI directly, so a tool could disagree with upstream on
+every input and the whole board would still read green. Running both tools against
+upstream's binaries on the 4,509-document fuzz corpus, over every combination of the four
+flags the JSON path recognises, found four bugs:
+
+- an indefinite map with an odd number of items — a key with no value — was walked past
+  rather than refused when it sat below the recursion limit, so the tool exited 0 on
+  input upstream exits 1 on. That is the only one of the four that accepted something
+  invalid rather than reporting the wrong error;
+- a tag at the recursion limit prints a marker and leaves the item it tags unread, and
+  upstream's container loop, driven by an item count that tags never decrement, renders
+  that item on the next turn. Indexing the loop instead left the item as trailing bytes
+  and reported garbage after the end of a document upstream renders in full;
+- a break arriving where a map value is due, on a pair boundary, is upstream's
+  `CborInvalidType`: the word `invalid` and `CborErrorUnknownType`. This is the same arm
+  the library's printer was missing, found by the fuzzer and fixed in an earlier round —
+  the second copy never got it;
+- stepping off a tag head skips the preparse upstream does before it consults the
+  recursion budget, so a document ending on a tag blamed nesting instead of saying it had
+  run out of data.
+
+The harness is `tests/port/tools_diff.sh` and it runs in `make test`. It needs upstream's
+tools built, which are binaries rather than the vendored archive, so a machine without
+them skips rather than fails.
+
+The lesson is the one the fuzzing page already makes in a different key: a green board
+measures what is wired to it. Three of these four are error-path behaviour that no
+reasonable person would have found by reading, and the fourth was a validity bug sitting
+in a tool that had been green since the day it was written, because nothing had ever asked
+it a question.
