@@ -239,8 +239,22 @@ pub fn skip(r: &mut Reader, levels_left: i32) -> Result<(), CborError> {
             r.pos += h.size;
             let count = enter(r, &h)?;
             if h.indefinite() {
+                // A break ends an indefinite map only between pairs. Upstream
+                // refuses one that arrives where a value was due, and it has to
+                // be counted here rather than left to the printer: skipping is
+                // the only thing that walks a subtree past the recursion limit,
+                // so without this an odd map hidden that deep is accepted and
+                // the whole document is reported valid.
+                //
+                // Tags are not counted, matching upstream, because a tag and
+                // the item it tags are one item to this function.
+                let mut items = 0u64;
                 while r.peek() != Some(BREAK) {
                     skip(r, levels_left - 1)?;
+                    items += 1;
+                }
+                if h.major == 5 && !items.is_multiple_of(2) {
+                    return Err(CborError::UnexpectedBreak);
                 }
                 r.pos += 1;
             } else {
