@@ -31,12 +31,17 @@ abi_layout       = "asserted"
 [budget]
 # grep -rn "unsafe {" crates/ --include='*.rs' | wc -l — blocks, not mentions.
 unsafe_blocks = 80
-fuzz_seconds  = 1502  # 601s pretty_diff + 901s json_diff; history in the docs
-# One real divergence found, at 420,793 execs in an earlier 900s run: the
-# pretty printer had no CborInvalidType arm. Fixed, kept as a regression
-# fixture in tests/port/corpus/, and the 901s run above is the re-verification.
+fuzz_seconds  = 3004  # 601s pretty_diff + 1502s json_diff + 901s validate_diff
+# One real divergence found by fuzzing, at 420,793 execs in an earlier 900s
+# run: the pretty printer had no CborInvalidType arm. Fixed, kept as a
+# regression fixture in tests/port/corpus/, and the runs above re-verify it.
 divergences_found = 1
 divergences_open  = 0
+# Found instead by building tests for what nothing else reached: the
+# CborErrorIO the two converters threw away (reader differential), and four
+# in cbordump, which is a second implementation the library's tests never
+# touch. All fixed, all now in `make test`. See decisions.md 18.
+bugs_found_by_tests = 5
 decisions     = 18
 upstream_issue = "https://github.com/intel/tinycbor/issues/331"
 

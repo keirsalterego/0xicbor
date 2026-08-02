@@ -41,7 +41,8 @@ The numbers below are the real output of `make test` and `bench/run.py`, not tar
 | **Original suite** | **4,929 / 4,929, zero failures** |
 | **Symbol parity** | **44 / 44, zero `nm` diff** against upstream's `libtinycbor.a` |
 | **ABI layout** | asserted against C-dumped sizes and offsets, passing |
-| **Differential fuzz** | **2.3M execs, zero divergences** across two targets (one find, fixed) |
+| **Differential fuzz** | **4.7M execs, zero divergences** across three targets (one find, fixed) |
+| **Tools vs upstream** | **exact** on 4,509 documents x 20 flag combinations (four finds, fixed) |
 | **`unsafe` blocks** | **80**, all in `cbor-ffi`; `cbor-core` is `forbid(unsafe_code)` |
 | **Dependencies** | **zero** |
 | **Speed vs C** | **3.4x faster** (mean p50 over 16 throughput measurements) |
@@ -86,10 +87,21 @@ prints `invalid` and reports the type. It is fixed, the input is a permanent fix
 [the fuzzing page](https://keirsalterego.github.io/0xicbor/verification/differential-fuzzing.html):
 60 seconds is enough to claim you fuzzed, not enough to find anything.
 
-There are two targets. The printer and the JSON converter share a parser and very little
+There are three targets. The printer and the JSON converter share a parser and very little
 else, and JSON has to refuse things diagnostic notation renders happily, so `json_diff`
-reaches 1,188 edges against the printer's 765. Its flags come out of the first byte of
-each input, because most of that converter is only reachable with them set.
+reaches 1,188 edges against the printer's 765. `validate_diff` compares a predicate rather
+than a rendering, which makes it the strictest of the three: there is no output to diff,
+so the error code is the whole answer. All three take their flags out of the head of each
+input, because most of what they gate is unreachable otherwise.
+
+**A green board only measures what is wired to it.** `cbordump` and `json2cbor` are
+rewritten in safe Rust rather than being C over the library — the FFI speaks in raw
+pointers, and a binary using it would need `unsafe` outside the one crate that is allowed
+any. So they are a *second* parser and a second printer, and nothing was checking them:
+the Qt suite tests the library, and both fuzzers call the C ABI directly. Running them
+against upstream's own binaries on 4,509 documents across every flag combination found
+four bugs, one of which accepted a document upstream refuses. That is
+[decision 18](decisions.md), and the harness now runs in `make test`.
 
 For scale on the `unsafe` count: uv ships 73 blocks, Bun ships 13,044. Every one of the 80
 here is in `cbor-ffi` dereferencing a pointer a C caller handed us, and each carries a
