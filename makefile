@@ -166,9 +166,16 @@ test: all test-port test-tools
 	echo "  TOTAL        $$total_pass passed  $$total_fail failed   (upstream: 4929)"
 
 # Zero output means the exported ABI matches upstream exactly.
+#
+# LC_ALL=C is load-bearing, not decoration. Collation of a leading underscore
+# against a letter varies by locale and by libc, so an unpinned `sort` puts the
+# seven _cbor_value_* symbols at the top on one machine and the bottom on
+# another. The set is identical either way, but `diff` reports fourteen moved
+# lines and the check fails for a reason that has nothing to do with the ABI.
+# The committed reference is C-collated, so this is what compares against it.
 symbols: $(LIB)
 	@nm -g --defined-only $(LIB) | awk '$$2 ~ /^[A-TV-Z]$$/ {print $$3}' \
-	  | grep -E '^_?cbor_' | sort -u > $(BUILD)/symbols-ours.txt
+	  | grep -E '^_?cbor_' | LC_ALL=C sort -u > $(BUILD)/symbols-ours.txt
 	@diff bench/reference/symbols-upstream.txt $(BUILD)/symbols-ours.txt \
 	  && echo "symbols: 44/44, zero diff"
 

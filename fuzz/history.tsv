@@ -18,3 +18,4 @@ date	target	seconds	execs	commit	result
 2026-08-02	validate_diff	901	1677406	5f6738c	clean
 2026-08-02	encode_diff	901	1644600	f8077e0	clean
 2026-08-02	pretty_diff	901	1458303	3a1cfd6	clean
+2026-08-02	pretty_diff	61	99480	47a3ed5	clean
